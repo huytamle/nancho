@@ -4,7 +4,9 @@
 
 import { sql } from "drizzle-orm";
 import {
+  bigint,
   boolean,
+  customType,
   check,
   date,
   doublePrecision,
@@ -21,14 +23,19 @@ import {
   time,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import type { CashCounts } from "@/lib/domain/cash";
+import type { ExpenseCategory } from "@/lib/domain/expense-command";
+import type { Role } from "@/lib/domain/roles";
 import type { ComboGroup, ISODate } from "@/lib/domain/types";
 
 const tstz = () => timestamp({ withTimezone: true });
 const isoDate = () => date({ mode: "string" }).$type<ISODate>();
 const createdAt = () => tstz().notNull().defaultNow();
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const productKind = pgEnum("product_kind", ["pizza", "bbq", "combo", "addon"]);
 export const dayStatus = pgEnum("day_status", ["open", "closed", "paused"]);
@@ -47,7 +54,13 @@ export const orderStatus = pgEnum("order_status", [
   "cancelled",
   "no_show",
 ]);
-export const staffRole = pgEnum("staff_role", ["owner", "kitchen", "shipper"]);
+// Vai trò vận hành (§17.2) — một người có nhiều vai trò.
+export const role = pgEnum("role", ["owner", "manager", "kitchen", "server", "barista", "shipper"]);
+export const shiftStatus = pgEnum("shift_status", ["open", "closed"]);
+export const cashBox = pgEnum("cash_box", ["register", "petty"]);
+export const cashEntryKind = pgEnum("cash_entry_kind", ["open", "close", "check", "drop", "replenish"]);
+export const expenseSource = pgEnum("expense_source", ["petty", "pocket", "bank"]);
+export const expenseStatus = pgEnum("expense_status", ["recorded", "pending", "approved", "rejected", "reimbursed"]);
 
 // ── Thực đơn ──
 
@@ -345,13 +358,14 @@ export const payments = pgTable("payments", {
 export const staff = pgTable("staff", {
   id: serial().primaryKey(),
   name: text().notNull().unique(),
-  role: staffRole().notNull(),
+  roles: role().array().$type<Role[]>().notNull(),
   pinHash: text().notNull(),
   isActive: boolean().notNull().default(true),
-}).enableRLS();
+  telegramUserId: bigint({ mode: "number" }).unique(),
+}, (t) => [check("staff_roles_check", sql`cardinality(${t.roles}) > 0`)]).enableRLS();
 
 export const settings = pgTable("settings", {
-  key: text().$type<"ordering" | "payment" | "shipping" | "contact">().primaryKey(),
+  key: text().$type<"ordering" | "payment" | "shipping" | "contact" | "ops">().primaryKey(),
   value: jsonb().notNull(),
 }).enableRLS();
 
@@ -364,6 +378,120 @@ export const rateLimits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 ).enableRLS();
+
+// ── Vận hành nội bộ (§17) ──
+
+/** Ca làm (§17.3). Tối đa một ca đang mở. Doanh thu café nhập từ báo cáo chốt ca Sapo khi đóng ca. */
+export const shifts = pgTable(
+  "shifts",
+  {
+    id: serial().primaryKey(),
+    serviceDate: isoDate().notNull(),
+    status: shiftStatus().notNull().default("open"),
+    openedBy: integer().notNull().references(() => staff.id),
+    openedAt: tstz().notNull(),
+    closedBy: integer().references(() => staff.id),
+    closedAt: tstz(),
+    cafeCash: integer(),
+    cafeTransfer: integer(),
+    cafeOther: integer(),
+    sapoPhoto: text(),
+    note: text(),
+  },
+  (t) => [
+    uniqueIndex("shifts_one_open").on(t.status).where(sql`${t.status} = 'open'`),
+    check("shifts_cafe_check", sql`coalesce(${t.cafeCash}, 0) >= 0 AND coalesce(${t.cafeTransfer}, 0) >= 0 AND coalesce(${t.cafeOther}, 0) >= 0`),
+    check("shifts_closed_check", sql`(${t.status} = 'open') = (${t.closedAt} IS NULL)`),
+  ],
+).enableRLS();
+
+/**
+ * Sổ két & hộp chi: lần đếm (`open·close·check`, có `counts` theo mệnh giá) và tiền ra/vào
+ * (`drop` = nộp tiền két về chủ, `replenish` = nạp bù hộp chi). `expected` = số đáng có lúc đếm (đếm mù).
+ */
+export const cashEntries = pgTable(
+  "cash_entries",
+  {
+    id: serial().primaryKey(),
+    box: cashBox().notNull(),
+    kind: cashEntryKind().notNull(),
+    shiftId: integer().references(() => shifts.id),
+    counts: jsonb().$type<CashCounts>(),
+    total: integer().notNull(),
+    expected: integer(),
+    staffId: integer().notNull().references(() => staff.id),
+    note: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.box, t.createdAt),
+    check("cash_entries_total_check", sql`${t.total} >= 0`),
+    check("cash_entries_counts_check", sql`(${t.kind} IN ('open', 'close', 'check')) = (${t.counts} IS NOT NULL)`),
+    check("cash_entries_box_check", sql`(${t.kind} <> 'replenish' OR ${t.box} = 'petty') AND (${t.kind} NOT IN ('open', 'close', 'drop') OR ${t.box} = 'register')`),
+  ],
+).enableRLS();
+
+/** Chi phí (§17.4). Không sửa/xoá — huỷ = `cancelled_at`. Tiền túi: pending → approved → reimbursed (| rejected). */
+export const expenses = pgTable(
+  "expenses",
+  {
+    id: serial().primaryKey(),
+    spentAt: tstz().notNull(),
+    amount: integer().notNull(),
+    category: text().$type<ExpenseCategory>().notNull(),
+    description: text().notNull(),
+    source: expenseSource().notNull(),
+    status: expenseStatus().notNull(),
+    spentBy: integer().notNull().references(() => staff.id),
+    approvedBy: integer().references(() => staff.id),
+    reimbursedFrom: expenseSource(),
+    reimbursedAt: tstz(),
+    replenishId: integer().references(() => cashEntries.id),
+    photo: text(),
+    telegramFileId: text(),
+    telegramChatId: bigint({ mode: "number" }),
+    telegramMsgId: integer(),
+    cancelledAt: tstz(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.spentAt),
+    check("expenses_amount_check", sql`${t.amount} > 0`),
+    check("expenses_description_check", sql`char_length(${t.description}) BETWEEN 1 AND 200`),
+    check("expenses_status_check", sql`(${t.source} = 'pocket') = (${t.status} <> 'recorded')`),
+    check("expenses_reimburse_check", sql`(${t.status} = 'reimbursed') = (${t.reimbursedFrom} IS NOT NULL AND ${t.reimbursedFrom} <> 'pocket')`),
+    unique("expenses_telegram_msg").on(t.telegramChatId, t.telegramMsgId),
+  ],
+).enableRLS();
+
+/** Nhật ký kiểm toán vận hành (§17.1). */
+export const opsEvents = pgTable(
+  "ops_events",
+  {
+    id: serial().primaryKey(),
+    type: text().notNull(),
+    actor: text().notNull(),
+    data: jsonb(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.createdAt)],
+).enableRLS();
+
+/** Chống xử lý trùng update Telegram (Telegram gửi lại khi webhook lỗi/chậm). Cron dọn > 7 ngày. */
+export const telegramUpdates = pgTable("telegram_updates", {
+  updateId: bigint({ mode: "number" }).primaryKey(),
+  createdAt: createdAt(),
+}).enableRLS();
+
+/** Ảnh vận hành (báo cáo Sapo, hoá đơn) — lưu ngay trong Postgres, phục vụ qua route có kiểm tra phiên. */
+export const opsFiles = pgTable("ops_files", {
+  id: uuid().primaryKey().defaultRandom(),
+  mime: text().notNull(),
+  bytes: bytea().notNull(),
+  size: integer().notNull(),
+  createdBy: integer().references(() => staff.id),
+  createdAt: createdAt(),
+}, (t) => [check("ops_files_size_check", sql`${t.size} BETWEEN 1 AND 1048576`)]).enableRLS();
 
 export type Order = typeof orders.$inferSelect;
 export type BatchRow = typeof batches.$inferSelect;

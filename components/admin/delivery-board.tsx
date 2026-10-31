@@ -5,7 +5,7 @@ import { NoteLine, StatusPill } from "@/components/admin/order-bits";
 import { copyText, telHref, useAdminAction, useKitchen } from "@/components/admin/use-admin";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
-import { canTransition } from "@/lib/domain/order-status";
+import { canTransitionAs } from "@/lib/domain/roles";
 import { formatPhone } from "@/lib/domain/phone";
 import type { OrderStatus } from "@/lib/domain/types";
 import { formatPrice } from "@/lib/format";
@@ -16,13 +16,12 @@ const t = copy.admin.delivery;
 
 // Tab "Giao" (§10.5): theo mẻ → tuyến; tổng COD, copy gửi shipper, bắt đầu giao, kết thúc từng điểm; quầy Rêu.
 export function DeliveryBoard() {
-  const { day, role, openOrder } = useKitchen();
+  const { day, orderRoles, openOrder } = useKitchen();
   const { pending, run } = useAdminAction();
   const byCode = new Map(day.orders.map((o) => [o.code, o]));
   const now = new Date(day.serverNow);
   const can = (o: KitchenOrder, to: OrderStatus) =>
-    canTransition(o.status, to, {
-      actor: { type: "staff", role },
+    canTransitionAs(orderRoles, o.status, to, {
       fulfillment: o.fulfillment,
       now,
       cutoffAt: new Date(day.batches.find((b) => b.id === o.batchId)?.cutoffAt ?? 0),

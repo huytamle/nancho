@@ -20,6 +20,13 @@ export async function resetOrders() {
   await s`DELETE FROM orders`;
   await s`DELETE FROM customers`;
   await s`DELETE FROM rate_limits`;
+  await s`DELETE FROM expenses`;
+  await s`DELETE FROM cash_entries`;
+  await s`DELETE FROM shifts`;
+  await s`DELETE FROM ops_files`;
+  await s`DELETE FROM ops_events`;
+  await s`DELETE FROM telegram_updates`;
+  await s`DELETE FROM settings WHERE key = 'ops'`;
   await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
   await s`UPDATE service_days SET order_seq = 0, status = 'open'`;
@@ -47,14 +54,21 @@ export async function closeDb() {
 }
 
 /** Nhân viên cho e2e bếp: PIN của mọi người = 123456. */
-export const STAFF = { owner: "Chủ quán", kitchen: "Bếp Tâm", shipper: "Ship Long" } as const;
+export const STAFF = { owner: "Chủ quán", kitchen: "Bếp Tâm", shipper: "Ship Long", manager: "Quản lý Mai", barista: "Pha chế Vy" } as const;
+const ROLES_OF: Record<keyof typeof STAFF, string> = {
+  owner: "{owner}",
+  kitchen: "{kitchen}",
+  shipper: "{shipper}",
+  manager: "{manager,barista}",
+  barista: "{barista,server}",
+};
 export const PIN = "123456";
 
 export async function seedStaff() {
   const pinHash = await hash(PIN);
   for (const [role, name] of Object.entries(STAFF)) {
-    await db()`INSERT INTO staff (name, role, pin_hash) VALUES (${name}, ${role}, ${pinHash})
-      ON CONFLICT (name) DO UPDATE SET role = EXCLUDED.role, pin_hash = EXCLUDED.pin_hash, is_active = true`;
+    await db()`INSERT INTO staff (name, roles, pin_hash) VALUES (${name}, ${ROLES_OF[role as keyof typeof STAFF]}::role[], ${pinHash})
+      ON CONFLICT (name) DO UPDATE SET roles = EXCLUDED.roles, pin_hash = EXCLUDED.pin_hash, is_active = true, telegram_user_id = NULL`;
   }
 }
 
@@ -88,4 +102,14 @@ export async function seedAppendixB() {
     await s`UPDATE batches SET used_pan = used_pan + ${pan}, used_bbq = used_bbq + ${bbq} WHERE id = ${batchIds.get(o.batchId)!}`;
   }
   await s`UPDATE service_days SET order_seq = ${appendixB.length} WHERE date = '2026-11-06'`;
+}
+
+/** Gắn tài khoản Telegram cho nhân viên (bot vận hành §17.4). */
+export async function linkTelegram(name: string, telegramUserId: number) {
+  await db()`UPDATE staff SET telegram_user_id = ${telegramUserId} WHERE name = ${name}`;
+}
+
+export async function expenseRows() {
+  return db()<{ amount: number; description: string; source: string; status: string; category: string }[]>`
+    SELECT amount, description, source, status, category FROM expenses ORDER BY id`;
 }

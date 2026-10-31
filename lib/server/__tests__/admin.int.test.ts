@@ -31,9 +31,9 @@ const at = (hhmm: string) => vnInstant(SAT, hhmm);
 const NOW = at("10:00");
 const db = getDb();
 let catalog: Catalog;
-const OWNER: StaffActor = { id: 1, role: "owner" };
-const KITCHEN: StaffActor = { id: 2, role: "kitchen" };
-const SHIPPER: StaffActor = { id: 3, role: "shipper" };
+const OWNER: StaffActor = { id: 1, roles: ["owner"] };
+const KITCHEN: StaffActor = { id: 2, roles: ["kitchen"] };
+const SHIPPER: StaffActor = { id: 3, roles: ["shipper"] };
 
 const batchAt = async (hhmm: string) => {
   const [b] = await db.select().from(t.batches).where(and(eq(t.batches.serviceDate, SAT), eq(t.batches.readyAt, at(hhmm))));
@@ -252,14 +252,14 @@ describe("dashboard & cron", () => {
 
 describe("nhân viên & phiên", () => {
   it("PIN băm argon2; nhân viên bị khoá không đăng nhập được", async () => {
-    const id = await upsertStaff({ name: "Chủ quán", role: "owner", pin: "123456" }, db);
-    expect(await verifyStaffPin(id, "123456", db)).toEqual({ id, name: "Chủ quán", role: "owner" });
+    const id = await upsertStaff({ name: "Chủ quán", roles: ["owner"], pin: "123456" }, db);
+    expect(await verifyStaffPin(id, "123456", db)).toEqual({ id, name: "Chủ quán", roles: ["owner"], role: "owner", orderRoles: ["owner"] });
     expect(await verifyStaffPin(id, "654321", db)).toBeNull();
     const [row] = await db.select().from(t.staff).where(eq(t.staff.id, id));
     expect(row.pinHash).not.toContain("123456");
     await db.update(t.staff).set({ isActive: false }).where(eq(t.staff.id, id));
     expect(await verifyStaffPin(id, "123456", db)).toBeNull();
-    await expect(upsertStaff({ name: "X", role: "kitchen", pin: "12" }, db)).rejects.toThrow();
+    await expect(upsertStaff({ name: "X", roles: ["kitchen"], pin: "12" }, db)).rejects.toThrow();
   });
 
   it("JWT phiên: ký/giải đúng, từ chối token sửa", async () => {

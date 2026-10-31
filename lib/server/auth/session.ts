@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { StaffRole } from "@/lib/domain/order-status";
+import { hasRole, orderRoles, primaryOrderRole, type Role } from "@/lib/domain/roles";
 import { getDb } from "@/lib/server/db/client";
 import { staff } from "@/lib/server/db/schema";
 
@@ -16,7 +17,19 @@ export const SESSION_COOKIE = "th_s";
 const SESSION_DAYS = 30;
 const DEV_SECRET = "dev-only-session-secret-change-me-0123456789";
 
-export type Staff = { id: number; name: string; role: StaffRole };
+/**
+ * `roles` = vai trò vận hành (§17.2). `role`/`orderRoles` = vai trò đổi trạng thái đơn (§7.5) suy ra từ đó:
+ * `role` chọn tab Kitchen Dashboard, null = không vào bếp (chỉ phục vụ/pha chế).
+ */
+export type Staff = { id: number; name: string; roles: Role[]; role: StaffRole | null; orderRoles: StaffRole[] };
+
+export const toStaff = (s: { id: number; name: string; roles: Role[] }): Staff => ({
+  id: s.id,
+  name: s.name,
+  roles: s.roles,
+  role: primaryOrderRole(s.roles),
+  orderRoles: orderRoles(s.roles),
+});
 
 function key(): Uint8Array {
   const s = process.env.SESSION_SECRET;
@@ -63,17 +76,30 @@ export const currentStaff = cache(async (): Promise<Staff | null> => {
   const id = await decrypt((await cookies()).get(SESSION_COOKIE)?.value);
   if (id === null) return null;
   const [s] = await getDb()
-    .select({ id: staff.id, name: staff.name, role: staff.role })
+    .select({ id: staff.id, name: staff.name, roles: staff.roles })
     .from(staff)
     .where(and(eq(staff.id, id), eq(staff.isActive, true)))
     .limit(1);
-  return s ?? null;
+  return s ? toStaff(s) : null;
 });
 
-/** Dùng trong page admin: chưa đăng nhập → /admin/login; sai quyền → về dashboard. */
-export async function requireStaff(roles?: StaffRole[]): Promise<Staff> {
+/** Trang đầu tiên của nhân viên: có việc ở bếp → Kitchen Dashboard, không → Vận hành. */
+export const homeFor = (s: Staff) => (s.role ? "/admin/kitchen" : "/admin/van-hanh");
+
+/**
+ * Dùng trong page admin: chưa đăng nhập → /admin/login; sai quyền → trang đầu của người đó.
+ * `roles` (vai trò vận hành) đạt khi có ít nhất một vai trò trùng.
+ */
+export async function requireStaff(roles?: Role[]): Promise<Staff> {
   const s = await currentStaff();
   if (!s) redirect("/admin/login");
-  if (roles && !roles.includes(s.role)) redirect("/admin/kitchen");
+  if (roles && !hasRole(s.roles, roles)) redirect(homeFor(s));
   return s;
+}
+
+/** Kitchen Dashboard: cần một vai trò ở bếp (owner · manager · kitchen · shipper). */
+export async function requireKitchenStaff(): Promise<Staff & { role: StaffRole }> {
+  const s = await requireStaff();
+  if (!s.role) redirect("/admin/van-hanh");
+  return s as Staff & { role: StaffRole };
 }

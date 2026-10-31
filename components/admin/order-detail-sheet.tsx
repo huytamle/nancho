@@ -6,7 +6,7 @@ import { ItemsList, StatusPill } from "@/components/admin/order-bits";
 import { copyText, mapsHref, telHref, useAdminAction, useKitchen, zaloHref } from "@/components/admin/use-admin";
 import { Sheet } from "@/components/ui/sheet";
 import { copy } from "@/data/copy";
-import { canTransition } from "@/lib/domain/order-status";
+import { canTransitionAs } from "@/lib/domain/roles";
 import { formatPhone } from "@/lib/domain/phone";
 import { vnTimeLabel } from "@/lib/domain/time";
 import type { OrderStatus } from "@/lib/domain/types";
@@ -32,7 +32,7 @@ function actionLabel(o: KitchenOrder, to: (typeof FORWARD)[number]) {
 }
 
 function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void }) {
-  const { day, role } = useKitchen();
+  const { day, role, orderRoles } = useKitchen();
   const { pending, run } = useAdminAction();
   const [note, setNote] = useState(o.note ?? "");
   const [cancelling, setCancelling] = useState(false);
@@ -40,14 +40,13 @@ function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void 
   const [events, setEvents] = useState<OrderEventView[] | null>(null);
   const batch = day.batches.find((b) => b.id === o.batchId);
   const ctx = {
-    actor: { type: "staff" as const, role },
     fulfillment: o.fulfillment,
     now: new Date(day.serverNow),
     cutoffAt: new Date(batch?.cutoffAt ?? 0),
     reason: "x",
   };
-  const next = FORWARD.filter((to) => canTransition(o.status, to, ctx).ok);
-  const canCancel = canTransition(o.status, "cancelled", ctx).ok;
+  const next = FORWARD.filter((to) => canTransitionAs(orderRoles, o.status, to, ctx).ok);
+  const canCancel = canTransitionAs(orderRoles, o.status, "cancelled", ctx).ok;
   const kitchen = role === "owner" || role === "kitchen";
   const movable = kitchen && (o.status === "placed" || o.status === "confirmed");
   const targets = day.batches.filter(

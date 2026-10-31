@@ -4,6 +4,7 @@ import { normalizePhone } from "@/lib/domain/phone";
 import {
   DEFAULT_SETTINGS,
   type ContactSettings,
+  type OpsSettings,
   type OrderingSettings,
   type PaymentSettings,
   type ShippingSettings,
@@ -19,6 +20,7 @@ export type AppSettings = {
   payment: PaymentSettings;
   shipping: ShippingSettings;
   contact: ContactSettings;
+  ops: OpsSettings;
 };
 
 const sitePhone = normalizePhone(site.contact.phoneDisplay) ?? "";
@@ -36,5 +38,6 @@ export async function loadSettings(db: Executor = getDb()): Promise<AppSettings>
     payment: { ...DEFAULT_APP_SETTINGS.payment, ...stored.payment },
     shipping: { ...DEFAULT_APP_SETTINGS.shipping, ...stored.shipping },
     contact: { ...DEFAULT_APP_SETTINGS.contact, ...stored.contact },
+    ops: { ...DEFAULT_APP_SETTINGS.ops, ...stored.ops },
   };
 }

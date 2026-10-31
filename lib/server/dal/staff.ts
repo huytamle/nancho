@@ -1,8 +1,8 @@
 import "server-only";
 import { hash, verify } from "@node-rs/argon2";
 import { asc, eq } from "drizzle-orm";
-import type { StaffRole } from "@/lib/domain/order-status";
-import type { Staff } from "@/lib/server/auth/session";
+import type { Role } from "@/lib/domain/roles";
+import { toStaff, type Staff } from "@/lib/server/auth/session";
 import { getDb, type Executor } from "@/lib/server/db/client";
 import { staff } from "@/lib/server/db/schema";
 
@@ -22,17 +22,17 @@ export async function verifyStaffPin(staffId: number, pin: string, db: Executor 
     await hash(pin);
     return null;
   }
-  return (await verify(s.pinHash, pin)) ? { id: s.id, name: s.name, role: s.role } : null;
+  return (await verify(s.pinHash, pin)) ? toStaff(s) : null;
 }
 
 /** Thêm nhân viên hoặc đặt lại PIN/quyền theo tên (script `npm run staff`, e2e). */
-export async function upsertStaff(input: { name: string; role: StaffRole; pin: string }, db: Executor = getDb()) {
+export async function upsertStaff(input: { name: string; roles: Role[]; pin: string }, db: Executor = getDb()) {
   if (!PIN_RE.test(input.pin)) throw new Error("PIN phải gồm đúng 6 chữ số");
   const pinHash = await hash(input.pin);
   const [row] = await db
     .insert(staff)
-    .values({ name: input.name.trim(), role: input.role, pinHash })
-    .onConflictDoUpdate({ target: staff.name, set: { role: input.role, pinHash, isActive: true } })
+    .values({ name: input.name.trim(), roles: input.roles, pinHash })
+    .onConflictDoUpdate({ target: staff.name, set: { roles: input.roles, pinHash, isActive: true } })
     .returning({ id: staff.id });
   return row.id;
 }

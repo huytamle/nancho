@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import * as z from "zod";
 import type { LoginResult } from "@/lib/admin-contract";
-import { createSession, deleteSession } from "@/lib/server/auth/session";
+import { createSession, deleteSession, homeFor } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
 import { PIN_RE, verifyStaffPin } from "@/lib/server/dal/staff";
 import { clientIp, MIN, rateLimit } from "@/lib/server/rate-limit";
@@ -15,19 +15,21 @@ const Input = z.object({ staffId: z.number().int().positive(), pin: z.string().r
 export async function login(raw: { staffId: number; pin: string }): Promise<LoginResult> {
   const parsed = Input.safeParse(raw);
   if (!parsed.success) return { ok: false, reason: "invalid" };
+  let home: string;
   try {
     const allowed = await rateLimit([{ key: `login:ip:${await clientIp()}`, limit: 5, windowSec: 15 * MIN }], serverNow());
     if (!allowed) return { ok: false, reason: "rate_limited" };
     const staff = await verifyStaffPin(parsed.data.staffId, parsed.data.pin);
     if (!staff) return { ok: false, reason: "wrong_pin" };
     await createSession(staff.id);
+    home = homeFor(staff);
     console.info(JSON.stringify({ evt: "staff_login", staff: staff.id }));
   } catch (err) {
     console.error(JSON.stringify({ evt: "login_failed", error: String(err) }));
     return { ok: false, reason: "server_error" };
   }
   // redirect() ném lỗi điều hướng → gọi ngoài try.
-  redirect("/admin/kitchen");
+  redirect(home);
 }
 
 export async function logout() {

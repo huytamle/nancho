@@ -1,6 +1,7 @@
 import "server-only";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
-import { canTransition, releasesCapacity, type StaffRole } from "@/lib/domain/order-status";
+import { releasesCapacity, type StaffRole } from "@/lib/domain/order-status";
+import { canTransitionAs } from "@/lib/domain/roles";
 import type { ISODate } from "@/lib/domain/time";
 import type { DayStatus, OrderStatus, PaymentMethod } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
@@ -9,7 +10,8 @@ import * as t from "@/lib/server/db/schema";
 // Thao tác của Kitchen Dashboard (§8.2, §10). Server Action lo zod + requireStaff; nghiệp vụ ở đây để
 // integration test gọi thẳng. Mọi thao tác ghi order_events với actor = "staff:<id>".
 
-export type StaffActor = { id: number; role: StaffRole };
+/** Nhân viên thao tác: `roles` = các vai trò đổi trạng thái đơn (người kiêm nhiều vai được nếu một vai được). */
+export type StaffActor = { id: number; roles: StaffRole[] };
 type Ctx = { actor: StaffActor; now: Date; db?: Db };
 
 const tag = (a: StaffActor) => `staff:${a.id}`;
@@ -38,8 +40,7 @@ export async function advanceOrdersCore(ids: string[], to: OrderStatus, ctx: Ctx
     for (const id of ids) if (!found.has(id)) result.skipped.push({ id, reason: "not_found" });
 
     for (const { order: o, cutoffAt } of rows) {
-      const check = canTransition(o.status, to, {
-        actor: { type: "staff", role: ctx.actor.role },
+      const check = canTransitionAs(ctx.actor.roles, o.status, to, {
         fulfillment: o.fulfillment,
         now: ctx.now,
         cutoffAt,

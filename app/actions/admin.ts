@@ -4,7 +4,7 @@ import { refresh, updateTag } from "next/cache";
 import * as z from "zod";
 import type { AdminError, AdminResult, QuickOrderInput, QuickOrderResult } from "@/lib/admin-contract";
 import { normalizePhone } from "@/lib/domain/phone";
-import type { StaffRole } from "@/lib/domain/order-status";
+import { hasRole, type Role } from "@/lib/domain/roles";
 import { isISODate, type ISODate } from "@/lib/domain/time";
 import { currentStaff, type Staff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
@@ -27,17 +27,17 @@ import { fieldErrors, OrderInput } from "@/lib/server/order-input";
 // Mọi mutation của Kitchen Dashboard (§8.2): zod → requireStaff (theo quyền §10.8) → DAL → refresh() để
 // dashboard đọc lại số liệu ngay. Lỗi trả mã ngắn; chuỗi hiển thị nằm ở data/copy.ts.
 
-const KITCHEN: StaffRole[] = ["owner", "kitchen"];
-const OWNER: StaffRole[] = ["owner"];
+const KITCHEN: Role[] = ["owner", "manager", "kitchen"];
+const OWNER: Role[] = ["owner"];
 
 const uuid = z.uuid();
 const id = z.number().int().positive();
 const date = z.string().refine(isISODate);
 const reason = z.string().trim().max(200);
 
-async function staffFor(roles?: StaffRole[]): Promise<Staff | null> {
+async function staffFor(roles?: Role[]): Promise<Staff | null> {
   const s = await currentStaff();
-  return s && (!roles || roles.includes(s.role)) ? s : null;
+  return s && (!roles || hasRole(s.roles, roles)) ? s : null;
 }
 
 /** Chạy một thao tác admin: parse → quyền → DAL → refresh. */
@@ -46,7 +46,7 @@ type Fail = { ok: false; reason: AdminError };
 async function run<I, R extends AdminResult>(
   schema: z.ZodType<I>,
   raw: unknown,
-  roles: StaffRole[] | undefined,
+  roles: Role[] | undefined,
   fn: (input: I, staff: Staff, now: Date) => Promise<R>,
 ): Promise<R | Fail> {
   const parsed = schema.safeParse(raw);
@@ -63,7 +63,7 @@ async function run<I, R extends AdminResult>(
   }
 }
 
-const actor = (s: Staff) => ({ id: s.id, role: s.role });
+const actor = (s: Staff) => ({ id: s.id, roles: s.orderRoles });
 
 const Advance = z.object({
   orderIds: z.array(uuid).min(1).max(100),
@@ -170,7 +170,7 @@ export async function createQuickOrder(raw: QuickOrderInput): Promise<QuickOrder
   if (!phone) return { ok: false, reason: "invalid", fieldErrors: { phone: "phoneInvalid" } };
   try {
     const staff = await staffFor(KITCHEN);
-    if (!staff || (input.overrideCutoff && staff.role !== "owner")) return { ok: false, reason: "forbidden" };
+    if (!staff || (input.overrideCutoff && !staff.roles.includes("owner"))) return { ok: false, reason: "forbidden" };
     const { result } = await placeOrderCore({ ...input, startedAt: 0 }, phone, {
       now: serverNow(),
       catalog: await loadCatalog(),

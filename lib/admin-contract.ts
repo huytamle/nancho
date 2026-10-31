@@ -11,6 +11,12 @@ export type AdminError =
   | "below_used"
   | "too_late"
   | "reason_required"
+  // Vận hành (§17)
+  | "shift_open"
+  | "no_shift"
+  | "photo_required"
+  | "locked"
+  | "self_review"
   | "server_error";
 
 export type AdminResult<T = object> = ({ ok: true } & T) | { ok: false; reason: AdminError };

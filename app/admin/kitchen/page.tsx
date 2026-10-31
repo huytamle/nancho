@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { KitchenDashboard } from "@/components/admin/kitchen-dashboard";
 import { copy, type KitchenTab } from "@/data/copy";
 import { isISODate, vnDateOf } from "@/lib/domain/time";
-import { requireStaff } from "@/lib/server/auth/session";
+import { requireKitchenStaff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
 import { loadKitchenDay } from "@/lib/server/dal/kitchen";
 
@@ -19,7 +19,7 @@ export default function KitchenPage({ searchParams }: PageProps<"/admin/kitchen"
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 
 async function Kitchen({ searchParams }: Pick<PageProps<"/admin/kitchen">, "searchParams">) {
-  const staff = await requireStaff();
+  const staff = await requireKitchenStaff();
   const sp = await searchParams;
   const now = serverNow();
   const ngay = one(sp.ngay);
@@ -29,7 +29,7 @@ async function Kitchen({ searchParams }: Pick<PageProps<"/admin/kitchen">, "sear
   return (
     <KitchenDashboard
       day={day}
-      staff={{ name: staff.name, role: staff.role }}
+      staff={{ name: staff.name, role: staff.role, orderRoles: staff.orderRoles }}
       initialTab={tab && tab in copy.admin.tabs ? (tab as KitchenTab) : "chuan-bi"}
     />
   );

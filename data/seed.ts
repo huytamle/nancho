@@ -181,9 +181,9 @@ export const seedPickupPoints: PickupPoint[] = [
   },
 ];
 
-/** Lịch mẫu: T4–CN (0 = CN), mẻ 17/18/19h, đút lò trước 20 phút, chốt 15:30, 4 khay + 4 BBQ. */
+/** Lịch mẫu: T6–CN (0 = CN), mẻ 17/18/19h, đút lò trước 20 phút, chốt 15:30, 4 khay + 4 BBQ. */
 export const seedSlotTemplate = {
-  weekdays: [3, 4, 5, 6, 0] as const,
+  weekdays: [5, 6, 0] as const, // ✅ pizza bán T6–T7–CN (chủ quán chốt 31/10/2026)
   readyTimes: ["17:00", "18:00", "19:00"] as const,
   ovenLeadMin: 20,
   cutoffTime: "15:30",

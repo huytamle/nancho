@@ -9,7 +9,7 @@ import { loadCatalog } from "@/lib/server/dal/catalog";
 import { ensureBatches, getOvenStatus, loadServiceDays } from "@/lib/server/dal/schedule";
 import { loadSettings } from "@/lib/server/dal/settings";
 
-// Lịch mẫu Phụ lục A: T4–CN, mẻ 17/18/19h, chốt 15:30, 4 khay + 4 BBQ. T7 07/11/2026 là ngày mở.
+// Lịch mẫu Phụ lục A: T6–CN, mẻ 17/18/19h, chốt 15:30, 4 khay + 4 BBQ. T7 07/11/2026 là ngày mở.
 const SAT = "2026-11-07" as ISODate;
 const at = (date: ISODate, hhmm: string) => vnInstant(date, hhmm);
 const db = getDb();
@@ -25,7 +25,7 @@ describe("migration", () => {
     const tables = await db.execute<{ relname: string; relrowsecurity: boolean }>(
       sql`SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'`,
     );
-    expect(tables.length).toBe(18);
+    expect(tables.length).toBe(24);
     expect(tables.filter((r) => !r.relrowsecurity)).toEqual([]);
     const policies = await db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'public'`);
     expect(policies.length).toBe(0);
@@ -40,8 +40,8 @@ describe("seed", () => {
     expect(await count(t.recipeLines)).toBe(seedRecipes.length);
     expect(await count(t.zones)).toBe(seedZones.length);
     expect(await count(t.pickupPoints)).toBe(seedPickupPoints.length);
-    expect(await count(t.slotTemplates)).toBe(15);
-    expect(await count(t.settings)).toBe(4);
+    expect(await count(t.slotTemplates)).toBe(9);
+    expect(await count(t.settings)).toBe(5);
   });
 
   it("chạy lại không tạo trùng và không ghi đè chỉnh sửa của chủ quán", async () => {
@@ -105,9 +105,9 @@ describe("ensureBatches", () => {
 
   it("chạy song song vẫn chỉ tạo mỗi ngày một lần", async () => {
     const results = await Promise.all([1, 2, 3].map(() => ensureBatches("2026-11-09" as ISODate, 7, db)));
-    // T4 11, T5 12, T6 13, T7 14, CN 15 → 5 ngày × 3 mẻ, tổng qua mọi lần gọi.
-    expect(results.reduce((n, r) => n + r.batches, 0)).toBe(15);
-    expect(await db.$count(t.serviceDays)).toBe(7);
+    // T6 13, T7 14, CN 15 → 3 ngày × 3 mẻ, tổng qua mọi lần gọi.
+    expect(results.reduce((n, r) => n + r.batches, 0)).toBe(9);
+    expect(await db.$count(t.serviceDays)).toBe(5);
   });
 });
 
@@ -143,9 +143,9 @@ describe("getOvenStatus với dữ liệu seed", () => {
     expect(late).toMatchObject({ kind: "after_cutoff", nextOpenDate: "2026-11-08" });
   });
 
-  it("T2 lò nghỉ → day_off, mở lại T4", async () => {
-    const s = await getOvenStatus(at("2026-11-09" as ISODate, "10:00"), db);
-    expect(s).toMatchObject({ kind: "day_off", nextOpenDate: "2026-11-11" });
+  it("T2 lò nghỉ, T6 ngoài cửa sổ đặt trước 3 ngày → chưa có ngày mở; T3 → mở lại T6", async () => {
+    expect(await getOvenStatus(at("2026-11-09" as ISODate, "10:00"), db)).toMatchObject({ kind: "day_off", nextOpenDate: null });
+    expect(await getOvenStatus(at("2026-11-10" as ISODate, "10:00"), db)).toMatchObject({ kind: "day_off", nextOpenDate: "2026-11-13" });
   });
 
   it("phản ánh suất đã dùng và trạng thái tạm ngưng", async () => {

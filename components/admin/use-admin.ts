@@ -11,7 +11,10 @@ import type { KitchenDay } from "@/lib/server/dal/kitchen";
 
 export type KitchenCtx = {
   day: KitchenDay;
+  /** Vai trò chính (chọn tab). */
   role: StaffRole;
+  /** Mọi vai trò đổi trạng thái đơn của người này (kiêm bếp + giao…). */
+  orderRoles: StaffRole[];
   goTo: (tab: KitchenTab, opts?: { batchId?: number }) => void;
   openOrder: (id: string) => void;
   openQuickOrder: () => void;

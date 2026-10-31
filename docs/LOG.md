@@ -27,7 +27,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M5 — Kitchen Dashboard** | ✅ trên `main` | xem `git log` |
 | **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
-| **M7–M11 — Vận hành nội bộ** (Blueprint 1.5 §17) | 📝 đặc tả xong, chờ chủ quán duyệt; **M7 là milestone kế tiếp** | — |
+| **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên nhánh (chưa lên `main`) | xem `git log` |
+| M8–M11 (checklist/sổ tay, chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M8 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -68,14 +69,16 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Chi phí **không** lấy từ két: hộp chi định mức 1.000.000đ, hoặc tiền túi rồi hoàn; owner/manager chi, luôn ghi. Telegram `/chi` (privacy mode bật).
 - Lương theo người, kỳ tháng, không tạm ứng, trả ngày 5. Vùng III 20.000đ/giờ (thưởng & bao ăn không tính vào mức tối thiểu). Manager duyệt **bảng công** (không thấy tiền); bảng công của manager do owner gửi; xác nhận bằng PIN trên điện thoại.
 - Kho 2 mức (nguyên liệu → bán thành phẩm), pizza trước (M10), café sau (M11, nhập Excel Sapo).
-- Tiền vào: **một TK VietinBank hộ kinh doanh** cho pizza + café (QR tĩnh ở quầy); SePay: khoản không mã đơn = doanh thu café, không cảnh báo.
+- Tiền vào: **pizza → TK TPBank riêng + SePay** (giữ cảnh báo "không khớp"); **café → MoMo kinh doanh** (phí ≥ 500đ/giao dịch qua dịch vụ đối soát không đáng với café biên mỏng) — nhập tay khi đóng ca.
+- Pizza bán **T6–T7–CN** (`data/seed.ts`). Với cửa sổ đặt trước 3 ngày, **Thứ Hai** khách thấy "lò nghỉ" mà chưa có ngày mở (T6 cách 4 ngày) — muốn T2 đặt được T6 thì đặt `ordering.daysAhead = 4`.
+- Thưởng: quỹ 1% tổng doanh thu tháng (café + pizza) chia theo giờ công; tuân thủ 300.000đ/tháng. Quán đóng 22:00; dọn dẹp sau 22:00 vẫn tính giờ + phụ cấp đêm 30%; ca tối bắt đầu trễ không tính làm thêm (chỉ khi > 8 giờ/ngày).
 
 ## Câu hỏi đang treo cho chủ quán
 
 1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
 2. ✅ (31/10/2026) **Supabase ở Mumbai** (`ap-south-1`) — chủ quán chốt giữ; `/chinh-sach` đã ghi "Ấn Độ (Mumbai)". Function Vercel đã chuyển `sin1` → **`bom1`** (`vercel.json`) để cùng vùng với DB.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
-4. Vận hành §16 #14–#16: cách tính thưởng doanh thu 1% & thưởng tuân thủ, quán có mở sau 22:00 không, ai là quản lý. SePay có hỗ trợ VietinBank không. File Excel mẫu báo cáo Sapo (cho M11).
+4. Vận hành: file Excel mẫu báo cáo "bán hàng theo mặt hàng" của Sapo (cho M11). Gán vai Quản lý cho ai (trong app).
 
 ## M2 — đã làm
 
@@ -160,6 +163,26 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Nhờ người có chuyên môn pháp lý rà `/chinh-sach` (cam kết "xử lý trong 72 giờ", hoàn tiền) — sửa trực tiếp trong `app/chinh-sach/page.tsx`.
 - Lighthouse mobile: chạy lại trên domain thật (Vercel) — trong sandbox chỉ đo được bản `next start` cục bộ.
 
+## M7 — đã làm
+
+- **Vai trò nhiều giá trị:** `staff.roles` (`owner·manager·kitchen·server·barista·shipper`), migration `0001_ops` chép `role` cũ → `0002_drop_staff_role`. `lib/domain/roles.ts`: `orderRoles` (manager = kitchen ở bếp), `canTransitionAs` (người kiêm bếp + giao), `canAssignRoles` (manager không đụng owner/manager; owner không tự bỏ owner). Phiên `Staff = { roles, role, orderRoles }`; chỉ phục vụ/pha chế → đăng nhập vào `/admin/van-hanh`; bếp có link "Vận hành" và ngược lại. Script: `npm run staff -- "Tên" owner,barista 123456`.
+- **`/admin/van-hanh`** (tab Ca & két · Chi phí (owner/manager) · Nhân viên): mở ca đếm két theo mệnh giá; đóng ca = doanh thu Sapo (TM · CK/MoMo · khác) + **ảnh Sapo bắt buộc khi có doanh thu café** + đếm két + nộp về chủ (ghi sau lần đếm) → **đếm mù**, kết quả lệch hiện sau khi gửi + Telegram. Số đáng có = đầu ca + TM café + COD pizza hoàn tất trong ca − nộp giữa ca. Mở ca so với số để lại ca trước. Hộp chi định mức 1.000.000đ: kiểm hộp, owner [Nạp bù] đúng tổng chứng từ. Owner sửa ngưỡng lệch / định mức.
+- **Chi phí:** form trong app (ô tiền đọc "150k/1tr2", nhóm tự đoán, nguồn Hộp chi/Tiền túi/CK, ảnh) + bot Telegram `/chi`, `/chihuy`, `/tonghop`, `/start <mã>` (liên kết 10 phút, HMAC), ảnh trả lời tin xác nhận = đính kèm, nút Đổi nhóm/Huỷ. Tiền túi: duyệt → hoàn (hộp chi/CK); manager không tự duyệt. Huỷ: người ghi trong 24 giờ, owner luôn được; đã nạp bù/đã hoàn thì khoá. Cron ngày 1: tổng chi tháng trước (một lần).
+- **Ảnh** ở bảng `ops_files` (bytea ≤ 1 MB, client nén JPEG) + `GET /api/ops/files/[id]` cần phiên — thay Supabase Storage (không thêm env/dịch vụ).
+- **Test:** unit 155 (`lib/domain/__tests__/ops.test.ts`) · int 60 (`ops.int.test.ts`: két/COD/nộp/đếm mù, hộp chi + nạp bù + hoàn túi, quyền, 24 giờ, tổng tháng, cron, phân công, bot: ghi/ảnh/trùng update/nút/huỷ/tổng hợp/nhóm lạ/chưa liên kết/liên kết) · e2e 84/84 (`e2e/ops.spec.ts`). JS `/` ≈ 175,5 KB gzip (chuỗi vận hành tách sang `data/copy-ops.ts`).
+
+## M7 — việc của chủ quán để bật
+
+1. Hosting: thêm `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET` (tự đặt, ≥ 32 ký tự chữ/số), tuỳ chọn `TELEGRAM_OPS_CHAT_ID` (nhóm chi phí riêng). Chạy `npm run db:migrate`.
+2. Đăng ký webhook một lần: `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://theheatpizza.vn/api/webhooks/telegram&secret_token=<SECRET>`. Giữ **privacy mode bật** trong @BotFather (bot chỉ đọc lệnh `/…`).
+3. Mỗi người: đăng nhập app → Vận hành → Nhân viên → [Liên kết Telegram]. Gán vai Quản lý trong cùng tab.
+4. Đặt 1.000.000đ vào hộp chi; ca đầu tiên đếm két như thường (lần đầu không có số so).
+
+## M8 — lưu ý từ M7
+
+- Tab mới thêm vào `opsTabsFor` (`components/ops/ops-dashboard.tsx`) và `opsCopy.tabs`. Quyền theo vai nằm ở DTO `loadOpsView` + DAL — giữ nguyên nguyên tắc này cho lương (manager không thấy tiền).
+- `ops_events` đã có — dùng cho log xem sổ tay, sửa giờ công.
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
@@ -175,4 +198,6 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Login rate-limit 5/15′/IP: chạy script đăng nhập nhiều lần → `DELETE FROM rate_limits`.
 - `next build` đọc `DATABASE_URL` trong `.env.local` (giờ đã là Supabase, sandbox không phân giải được) → luôn truyền `DATABASE_URL=…5433/heat` khi build/e2e.
 - e2e ghi bảng `payments` (webhook) → `resetOrders` xoá cả `payments`; id giao dịch SePay trùng giữa các lần chạy sẽ thành `duplicate`.
+- Ngày/giờ trong `sql\`…\`` thô của drizzle phải truyền `date.toISOString()` + `::timestamptz` (truyền `Date` thẳng → lỗi `ERR_INVALID_ARG_TYPE`).
+- `drizzle-kit generate` hỏi đổi tên (cần TTY) khi vừa thêm vừa bỏ cột/enum → tách 2 migration (thêm trước, bỏ sau).
 - Script Playwright ngoài repo: `createRequire("/home/user/nancho/")("@playwright/test")` (gói `playwright` không resolve từ scratchpad).

@@ -18,6 +18,7 @@ import { prepSummaryText } from "@/lib/kitchen-text";
 import { ORDER_ADDRESS_RETENTION_DAYS } from "@/lib/privacy";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
+import { sendMonthlyExpenseSummary } from "@/lib/server/dal/ops";
 import { ensureBatches } from "@/lib/server/dal/schedule";
 import { loadSettings } from "@/lib/server/dal/settings";
 
@@ -278,6 +279,8 @@ export type DailyResult = {
   created: { days: number; batches: number };
   summarySent: boolean;
   rateLimitsDeleted: number;
+  /** Ngày 1 hằng tháng: tổng chi phí tháng trước (§17.4). */
+  expenseSummarySent: boolean;
   addressesAnonymized: number;
 };
 
@@ -322,5 +325,7 @@ export async function runDaily(now: Date, send: (text: string) => Promise<boolea
       if (!summarySent) await db.update(t.serviceDays).set({ summarySentAt: null }).where(eq(t.serviceDays.date, today));
     }
   }
-  return { created, summarySent, rateLimitsDeleted: deleted.length, addressesAnonymized: anonymized.length };
+  await db.delete(t.telegramUpdates).where(lt(t.telegramUpdates.createdAt, new Date(now.getTime() - 7 * 86_400_000)));
+  const expenseSummarySent = await sendMonthlyExpenseSummary(now, send, db);
+  return { created, summarySent, rateLimitsDeleted: deleted.length, addressesAnonymized: anonymized.length, expenseSummarySent };
 }

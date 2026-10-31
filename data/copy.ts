@@ -319,6 +319,11 @@ export const copy = {
       below_used: "Không được thấp hơn số suất đã nhận.",
       too_late: "Không đổi được ở trạng thái hiện tại.",
       reason_required: "Cần ghi lý do.",
+      shift_open: "Đang có ca mở — đóng ca đó trước.",
+      no_shift: "Chưa mở ca.",
+      photo_required: "Cần chụp báo cáo chốt ca Sapo.",
+      locked: "Chứng từ đã khoá (quá 24 giờ / đã nạp bù / đã hoàn).",
+      self_review: "Không tự duyệt khoản của chính mình — nhờ chủ quán.",
       server_error: "Lỗi máy chủ — thử lại.",
     },
     prep: {
@@ -486,6 +491,7 @@ export const copy = {
     social: "Mạng xã hội",
     legal: "Thông tin kinh doanh",
   },
+
 } as const;
 
 export type ReservationErrorKey = keyof typeof copy.reservationForm.errors;

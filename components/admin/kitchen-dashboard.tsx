@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { logout } from "@/app/actions/auth";
@@ -14,6 +15,7 @@ import { ding, KitchenContext, unlockAudio, useNow, type KitchenCtx } from "@/co
 import { WakeLockButton } from "@/components/admin/wake-lock";
 import { Toaster } from "@/components/ui/toaster";
 import { copy, type KitchenTab } from "@/data/copy";
+import { opsCopy } from "@/data/copy-ops";
 import { showToast } from "@/lib/client/toast-store";
 import type { StaffRole } from "@/lib/domain/order-status";
 import type { KitchenDay } from "@/lib/server/dal/kitchen";
@@ -50,7 +52,7 @@ const subscribeOnline = (l: () => void) => {
   };
 };
 
-export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; staff: { name: string; role: StaffRole }; initialTab: KitchenTab }) {
+export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; staff: { name: string; role: StaffRole; orderRoles: StaffRole[] }; initialTab: KitchenTab }) {
   const router = useRouter();
   const tabs = TABS_FOR[staff.role];
   const [tab, setTab] = useState<KitchenTab>(tabs.includes(initialTab) ? initialTab : tabs[0]);
@@ -111,6 +113,7 @@ export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; 
   const ctx: KitchenCtx = {
     day,
     role: staff.role,
+    orderRoles: staff.orderRoles,
     goTo(next, opts) {
       switchTab(next);
       if (opts?.batchId) setTimeout(() => document.getElementById(`me-${opts.batchId}`)?.scrollIntoView({ block: "start" }), 50);
@@ -175,6 +178,9 @@ export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; 
                 ))}
               </select>
               <WakeLockButton />
+              <Link href="/admin/van-hanh" className="inline-flex min-h-11 items-center rounded-full px-3 text-sm font-semibold text-secondary hover:text-text">
+                {opsCopy.navLink}
+              </Link>
               <form action={logout}>
                 <button type="submit" className="min-h-11 rounded-full px-3 text-sm text-secondary hover:text-text">
                   {t.logout} <span className="sr-only">({staff.name})</span>

@@ -2,7 +2,7 @@
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
 > **Phiên bản:** 1.5 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
-> **Thay đổi 1.5:** ✅ Thêm **vận hành nội bộ** `/admin/van-hanh` (§17, M7–M11): vai trò nhiều giá trị, ca & két, hộp chi, chi phí qua Telegram, checklist, sổ tay, chấm công, bảng công/lương, kho 2 mức, chỉ số · route mới ở §5.4 · SePay phân loại khoản không mã đơn thành doanh thu café (§17.9).
+> **Thay đổi 1.5:** ✅ Thêm **vận hành nội bộ** `/admin/van-hanh` (§17, M7–M11): vai trò nhiều giá trị, ca & két, hộp chi, chi phí qua Telegram, checklist, sổ tay, chấm công, bảng công/lương, kho 2 mức, chỉ số · route mới ở §5.4 · ✅ pizza nhận tiền qua TK **TPBank riêng** (SePay), café giữ **MoMo kinh doanh** (§17.9) · pizza bán T6–CN (§16 #5).
 > **Thay đổi 1.4 (M2):** `slot_templates` thêm `UNIQUE (weekday, ready_time)`; thêm CHECK thời gian mẻ (`cutoff_at ≤ oven_at ≤ ready_at`), `order_items.line_total = unit_price × qty` (§6.2) · `ensureBatches` chỉ sinh mẻ cho ngày **chưa có** `service_days` (§15 M2) · dev dependency `tsx` cho script seed (§5.2).
 > **Thay đổi 1.3 (M1):** `priceOrder` trả kết quả có kiểu (§7.4) · làm rõ quyền bếp/shipper (§7.5) · Prep trả `split`/`byProduct` có cấu trúc thay cho chuỗi `breakdown`, điểm giao trong tuyến xếp theo khu vực rồi số thứ tự (§7.6, Phụ lục B) · regex mã chuyển khoản chặn số dính liền (§7.8) · seed Phụ lục A ở `data/seed.ts`.
 > **Thay đổi 1.2:** ✅ Giữ **Café, KOLD Gelato và Đặt bàn** của quán THE HEAT thành mục riêng `/tai-quan` (§5.4) — không thuộc luồng đặt món · Thêm token `--on-accent` (chữ đen trên nền cam, §9.1) · M0 hoàn tất.
@@ -272,6 +272,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | `GET /api/cron/daily` | Tạo mẻ cho N ngày tới; gửi Telegram tổng hợp sau giờ chốt | Bảo vệ bằng header `Authorization: Bearer ${CRON_SECRET}` |
 | `POST /api/webhooks/sepay` | Nhận giao dịch chuyển khoản | Xác thực API key header; idempotent theo mã giao dịch |
 | `POST /api/webhooks/telegram` | ✅ (v1.5) Lệnh `/chi`, ảnh hoá đơn, nút bấm, liên kết tài khoản | Header `X-Telegram-Bot-Api-Secret-Token`; idempotent theo `update_id` — §17.4 |
+| `GET /api/ops/files/[id]` | ✅ (M7) Ảnh báo cáo Sapo / hoá đơn | Cần phiên nhân viên; hoá đơn chỉ owner/manager hoặc người tải lên |
 | `app/manifest.ts`, `robots.ts`, `sitemap.ts`, `icon`, `opengraph-image` | Metadata | `/admin`, `/o` bị `disallow` |
 
 ### 5.5 Cấu trúc thư mục đích
@@ -362,7 +363,6 @@ docs/BLUEPRINT.md  docs/MARKETING.md
 | `SEPAY_WEBHOOK_KEY` | M6 | Xác thực webhook |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Phương án B | Khoá cố định khi tự host nhiều instance |
 | `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` | M7 | Webhook bot vận hành (§17.4) |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | M7 | **Chỉ server** — Storage ảnh hoá đơn/báo cáo Sapo |
 
 Không commit file `.env*` (đã có trong `.gitignore`). Thêm `.env.example` liệt kê tên biến.
 
@@ -1256,9 +1256,11 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** chuyển khoản thử → đơn tự `paid` + Telegram; Lighthouse mobile ≥ 95 Performance/100 Accessibility/100 SEO.
 - Ghi chú triển khai: thuần ở `lib/payments.ts` (link VietQR, zod payload SePay), env ở `lib/server/payments/vietqr.ts`, đối soát ở `lib/server/payments/sepay.ts` (`recordSepayCore`). `payments.provider_txn_id = "sepay:<id>"` (UNIQUE → SePay gửi lại/song song chỉ ghi một lần). Dò mã đơn trong `code + content + description`; **cộng mọi khoản SePay của đơn** ≥ `total` → `settlePaid` (dùng chung với [Đã trả]: `paid`, `payment_method = transfer`, tự xác nhận `placed`); thiếu → Telegram "chuyển thiếu"; đơn đã trả/đã huỷ → "kiểm tra hoàn tiền"; không khớp → `order_id null` + Telegram. Tiền ra (`out`) bỏ qua. Lỗi DB → 500 để SePay thử lại. Khối CK dùng chung `components/store/transfer-box.tsx` (màn thành công + `/o/[token]`): QR, STK, chủ TK, [Lưu mã QR] (mở ảnh — `download` không chạy với ảnh khác origin), [Sao chép STK], [Sao chép nội dung]. `/m/[slug]` = `StorePage` dùng chung với `/`, sheet đọc món từ đường dẫn (`productFromPath`), mở/đóng sheet trên `/m/*` đưa URL về `/`. OG từng món: font Be Vietnam Pro (OFL, `assets/og/`, lấy từ `@fontsource`). `?src=`: `proxy.ts` (matcher chỉ khi có query `src`) ghi cookie `th_src` 30 ngày (không httpOnly) → `orders.source`; analytics `@vercel/analytics` (chỉ render khi `VERCEL`), `beforeSend` che token `/o/<token>`. `instrumentation.ts` gửi Telegram ≤ 1 tin/phút/instance. Cron daily thêm: xoá `address_text/lat/lng` của đơn > 90 ngày (thời hạn ở `lib/privacy.ts`, trang `/chinh-sach` đọc cùng hằng số).
 
-### M7 — Vận hành: nền, ca & két, chi phí, Telegram (≈ 4 ngày)
-- `staff.roles` (migration), phân công vai trò, khung `/admin/van-hanh`, `ops_events`. Ca: mở/đóng, đếm két & hộp chi theo mệnh giá (đếm mù), nhập doanh thu Sapo + ảnh, nộp tiền về chủ, nạp bù hộp chi. Chi phí trong app + `POST /api/webhooks/telegram` (`/chi`, `/chihuy`, `/tonghop`, ảnh trả lời, nút, liên kết tài khoản), tiền túi chờ duyệt/hoàn. SePay `payments.category` (§17.9). Supabase Storage bucket riêng tư `ops`.
-- **Chấp nhận:** `cash.ts`, `money-text.ts`, `expense-command.ts` coverage ≥ 95% (gồm mọi dạng số tiền ở §17.4); int test: số đáng có của két (COD + café − nộp), bất biến hộp chi qua chi → kiểm → nạp bù, người duyệt ≠ người chi, webhook Telegram sai secret 401 / gửi lại `update_id` không ghi đôi / người lạ bị bỏ qua, SePay không mã → `cafe` không cảnh báo; e2e: mở → đóng ca trên iPhone 13, axe 0 lỗi nghiêm trọng.
+### M7 — Vận hành: nền, ca & két, chi phí, Telegram (≈ 4 ngày) ✅
+- `staff.roles` (migration), phân công vai trò, khung `/admin/van-hanh`, `ops_events`. Ca: mở/đóng, đếm két & hộp chi theo mệnh giá (đếm mù), nhập doanh thu Sapo + ảnh, nộp tiền về chủ, nạp bù hộp chi. Chi phí trong app + `POST /api/webhooks/telegram` (`/chi`, `/chihuy`, `/tonghop`, ảnh trả lời, nút, liên kết tài khoản), tiền túi chờ duyệt/hoàn. ảnh trong `ops_files`.
+- **Chấp nhận:** `cash.ts`, `money-text.ts`, `expense-command.ts` coverage ≥ 95% (gồm mọi dạng số tiền ở §17.4); int test: số đáng có của két (COD + café − nộp), bất biến hộp chi qua chi → kiểm → nạp bù, người duyệt ≠ người chi, webhook Telegram sai secret 401 / gửi lại `update_id` không ghi đôi / người lạ bị bỏ qua ; e2e: mở → đóng ca trên iPhone 13, axe 0 lỗi nghiêm trọng.
+
+- Ghi chú triển khai: vai trò `staff.roles` (migration `0001_ops` chép `role` cũ sang, `0002` bỏ cột). Phiên `Staff = { roles, role, orderRoles }` — `role` = vai chính ở bếp (owner > kitchen/manager > shipper, null = chỉ vận hành → đăng nhập vào `/admin/van-hanh`); đổi trạng thái đơn dùng `canTransitionAs(orderRoles, …)` nên người kiêm bếp + giao làm được cả hai. `npm run staff -- "Tên" owner,barista 123456`. Logic thuần: `lib/domain/{roles,cash,money-text,expense-command}.ts`; văn bản `lib/ops-text.ts`; DAL `lib/server/dal/ops.ts`; bot `lib/server/ops/telegram-bot.ts`; action `app/actions/ops.ts`; UI `components/ops/*`, chuỗi `data/copy-ops.ts` (tách khỏi `copy.ts` để không vào JS trang `/`). Chi phí: chỉ owner/manager; danh sách & tổng tháng chỉ trả cho owner/manager (DTO). COD pizza đã thu trong ca = đơn `cod` có sự kiện chuyển `completed` trong khung giờ ca. Ảnh Sapo bắt buộc khi có doanh thu café. Cron: ngày 1 gửi tổng chi tháng trước (đánh dấu `ops_events` `expense_summary:<YYYY-MM>`), dọn `telegram_updates`. Bot: privacy mode bật; nút `c:/s:/x:/b:<id>`; tin xác nhận lưu `telegram_msg_id` để khớp ảnh trả lời. Chi ghi trong app cũng đăng vào nhóm vận hành kèm nút.
 
 ### M8 — Checklist & Sổ tay (≈ 2,5 ngày)
 - Mẫu + lượt checklist theo vai trò, giá trị đo có ngưỡng, ảnh; sổ tay Markdown (`marked`, chỉ server) theo vai trò, công thức pizza đọc `recipe_lines`.
@@ -1291,7 +1293,7 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 2 | Thực đơn & giá chính thức (2 pizza, 2 BBQ, combo, add-on) | ✅ **Đã chốt:** giữ nguyên Phụ lục A |
 | 3 | Bếp đặt ở đâu? Rêu chỉ là điểm nhận hay cũng là bếp? Địa chỉ Rêu? | ✅ **Đã chốt:** Rêu là bếp + điểm nhận. ⏳ Còn thiếu: địa chỉ & toạ độ Rêu (dùng cho footer pháp lý, bản đồ, điểm xuất phát tuyến giao) |
 | 4 | Các mẻ trong ngày, giờ chốt, sức chứa mỗi mẻ (khay pizza / phần BBQ) | 17:00 · 18:00 · 19:00; chốt 15:30; 4 pizza + 4 BBQ mỗi mẻ |
-| 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | T4–CN; 3 ngày |
+| 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | ✅ **Pizza bán T6–T7–CN** (giai đoạn đầu, `data/seed.ts`); đặt trước 3 ngày |
 | 6 | Danh sách Thôn/Khu phố, phí ship từng nơi, cách nhóm tuyến | Phụ lục A (placeholder) |
 | 7 | Chính sách thanh toán: COD cho tất cả? Khi nào bắt trả trước? | `risk_based` (khách từng bom hàng hoặc đơn ≥ 1.000.000đ) |
 | 8 | Định lượng (BOM): gram phô mai, pepperoni, trọng lượng túi sườn… | Phụ lục A |
@@ -1300,10 +1302,10 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 11 | Hosting: Vercel Pro (~20 USD/tháng, ít vận hành) hay VPS (~150–300 nghìn/tháng, cần người vận hành)? | Vercel Pro + **Supabase** (gói Free khi phát triển; **Pro ~25 USD/tháng khi chạy thật** vì gói Free tạm dừng dự án sau 7 ngày không hoạt động và không có sao lưu tự động) |
 | 12 | Thông tin pháp lý footer (hộ kinh doanh, MST/ĐKKD, email) | Placeholder, chặn ra mắt nếu chưa có |
 | 13 | Ảnh chụp mới: Pizza Phô mai Bơ tỏi, BBQ #2, Combo, hũ sốt, chai cold brew Rêu | Dùng ảnh hiện có làm tạm |
-| 14 | **Thưởng doanh thu 1%** tính trên doanh thu nào (café + pizza? trước/sau giảm giá) và chia thế nào (mỗi người 1% hay một quỹ 1% chia theo giờ công)? | Quỹ = 1% tổng doanh thu tháng (café theo Sapo + đơn pizza hoàn tất), chia theo tỉ lệ giờ công |
-| 15 | **Thưởng tuân thủ:** bao nhiêu tiền, tiêu chí? | 300.000đ/tháng khi: đi muộn ≤ 2 lần, checklist ≥ 95%, lệch két ca mình ≤ 20.000đ; owner sửa được trước khi duyệt |
-| 16 | Quán có mở sau 22:00 không? Ai là quản lý? | Có tính phụ cấp đêm 30% nếu có; vai trò gán trong app |
-| 17 | Tài khoản nhận tiền | ✅ **Đã chốt (uỷ quyền):** một TK VietinBank hộ kinh doanh cho pizza + café, QR tĩnh ở quầy, SePay phân loại (§17.9). ⏳ Kiểm tra SePay hỗ trợ VietinBank + hạn mức giao dịch |
+| 14 | Thưởng doanh thu 1% | ✅ **Đã chốt:** quỹ chung 1% tổng doanh thu tháng (café + pizza), chia theo tỉ lệ giờ công |
+| 15 | Thưởng tuân thủ | ✅ **300.000đ/tháng**. Tiêu chí mặc định: đi muộn ≤ 2 lần, checklist ≥ 95%, lệch két ca mình ≤ 20.000đ; owner sửa được trước khi duyệt |
+| 16 | Quán có mở sau 22:00 không? | ✅ Không; giờ dọn dẹp sau 22:00 vẫn tính + phụ cấp đêm 30%; ca trễ không tính làm thêm (§17.7). Quản lý: gán trong app |
+| 17 | Tài khoản nhận tiền | ✅ **Đã chốt:** pizza → TPBank riêng + SePay; café → MoMo kinh doanh (§17.9) |
 | 18 | Vận hành: lương theo người, kỳ tháng, không tạm ứng, trả ngày 5; hộp chi 1.000.000đ; chi từ hộp chi hoặc tiền túi rồi hoàn; vùng III (20.000đ/giờ) | ✅ **Đã chốt** 31/10/2026 (§17) |
 
 ---
@@ -1348,7 +1350,7 @@ Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có 
 - **Mở ca:** đếm két theo mệnh giá. Lệch so với lần đóng ca trước → cảnh báo ngay.
 - **Đóng ca:** (1) đếm két (đếm mù); (2) nhập doanh thu café **từ báo cáo chốt ca Sapo**: tiền mặt, chuyển khoản, khác — **bắt buộc kèm ảnh** báo cáo Sapo; (3) nộp tiền về chủ (nếu có).
 - **Số đáng có** = đầu ca + tiền mặt café (Sapo) + COD pizza hoàn tất trong ca (`payment_method = cod`, `completed`) − tiền nộp về chủ. **Lệch** = đếm thật − đáng có. Lệch ≠ 0 → Telegram; vượt `settings.ops.cashTolerance` (mặc định 20.000đ) → ⚠.
-- **Đối soát chuyển khoản café:** Σ khoản SePay không mã đơn trong khung giờ ca (§17.9) so với số "chuyển khoản" nhập từ Sapo → hiện chênh lệch.
+- **Chuyển khoản/MoMo café** không qua SePay (§17.9): nhân viên nhập số Sapo; chủ quán đối chiếu với báo cáo ngày của MoMo kinh doanh. App hiện tổng theo ngày để so nhanh.
 - **Chi phí không lấy từ két** (chủ quán chốt).
 
 **Hộp chi (`petty`)** — quỹ định mức **1.000.000đ** (`settings.ops.pettyFloat`):
@@ -1358,7 +1360,8 @@ Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có 
 
 **Bảng:**
 - `shifts`: `id`, `service_date`, `opened_by`, `opened_at`, `closed_by`, `closed_at`, `status` (`open·closed`), `cafe_cash`, `cafe_transfer`, `cafe_other` (int null), `sapo_photo` (đường dẫn Storage), `note`. Tối đa một ca `open` (partial unique index).
-- `cash_counts`: `id`, `box` (`register·petty`), `kind` (`open·close·check·replenish·drop`), `shift_id` null, `counts` jsonb `{ "500000": 2, … }`, `total` int (CHECK = tổng tính lại ở DAL, test), `expected` int null, `counted_by`, `created_at`, `note`.
+- `cash_entries` (M7): `id`, `box` (`register·petty`), `kind` (`open·close·check` có `counts` jsonb `{ "500000": 2, … }`; `drop·replenish` chỉ có `total`), `shift_id` null, `total` int ≥ 0, `expected` int null (số đáng có lúc đếm), `staff_id`, `note`, `created_at`. Nộp về chủ lúc đóng ca ghi **sau** lần đếm → không làm lệch lần đếm, chỉ trừ vào số đầu ca sau.
+- Kèm `ops_events` (nhật ký), `telegram_updates` (chống trùng, cron dọn > 7 ngày), `ops_files` (ảnh).
 
 ### 17.4 Chi phí & Telegram (M7)
 
@@ -1374,7 +1377,7 @@ Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có 
 /tonghop                       → tổng chi tháng này theo nhóm & nguồn
 ```
 
-- Bot trả lời: "🧾 C123 · 150.000đ · Nguyên liệu café · Hộp chi · Lan" + nút [Đổi nhóm] [Huỷ] + "↩ Trả lời tin này bằng ảnh hoá đơn". Ảnh trả lời → tải qua `getFile`, lưu **Supabase Storage** bucket riêng tư `ops` (REST bằng `fetch`, không thêm thư viện), giữ cả `telegram_file_id`.
+- Bot trả lời: "🧾 C123 · 150.000đ · Nguyên liệu café · Hộp chi · Lan" + nút [Đổi nhóm] [Huỷ] + "↩ Trả lời tin này bằng ảnh hoá đơn". Ảnh trả lời → tải qua `getFile`, lưu bảng **`ops_files`** (bytea, ≤ 1 MB — client nén JPEG ≤ 1600 px) và phục vụ qua `GET /api/ops/files/[id]` có kiểm tra phiên; giữ cả `telegram_file_id`. (M7 chọn Postgres thay Supabase Storage: không thêm env/dịch vụ/CSP; ~2 nhân viên → vài MB/tháng.)
 - Số tiền đọc bằng `money-text.ts`: `150k`, `150 k`, `1tr2`, `1,2tr`, `1.200.000`, `85000`. Không đọc được → bot trả lời cú pháp mẫu, không ghi.
 - Nhóm chi phí (owner sửa): Nguyên liệu pizza · Nguyên liệu café · Bao bì · Gas/điện/nước · Sửa chữa · Vệ sinh · Marketing · Khác. Từ khoá đoán nhóm nằm trong `settings.ops.expenseKeywords`.
 - **Liên kết tài khoản:** trong app [Liên kết Telegram] → link `t.me/<bot>?start=<token 10 phút>` → bot lưu `staff.telegram_user_id`. Tin từ người chưa liên kết hoặc nhóm lạ → bỏ qua (chỉ trả lời "chưa liên kết").
@@ -1384,7 +1387,7 @@ Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có 
 
 **Route:** `POST /api/webhooks/telegram` — xác thực header `X-Telegram-Bot-Api-Secret-Token` (= `TELEGRAM_WEBHOOK_SECRET`, so sánh hằng thời gian), chỉ nhận `TELEGRAM_CHAT_ID`/`TELEGRAM_OPS_CHAT_ID` và chat riêng của người đã liên kết; idempotent theo `update_id`. **Agent đọc tài liệu Bot API hiện hành** trước khi code (setWebhook, callback_query, getFile).
 
-**Bảng `expenses`:** `id`, `code` (`C123`), `spent_at`, `amount` int > 0, `category`, `description`, `source`, `spent_by`, `status` (`recorded·pending·approved·rejected·reimbursed`), `approved_by` null, `reimbursed_by_expense_id` null, `replenish_id` null (đợt nạp bù hộp chi), `photo` null, `telegram_file_id` null, `telegram_msg_id` null, `cancelled_at` null, `created_at`.
+**Bảng `expenses`** (M7): `id` (mã hiển thị `C<id>`), `spent_at`, `amount` int > 0, `category`, `description` (1–200), `source`, `status` (`recorded` cho hộp chi/CK; tiền túi `pending → approved → reimbursed` | `rejected`), `spent_by`, `approved_by`, `reimbursed_from` (`petty·bank`) + `reimbursed_at`, `replenish_id` → `cash_entries` (đợt nạp bù), `photo` → `ops_files`, `telegram_file_id`, `telegram_chat_id` + `telegram_msg_id` (UNIQUE — khớp ảnh trả lời), `cancelled_at`, `created_at`. Hoàn tiền túi bằng hộp chi cũng là tiền rút khỏi hộp (tính vào bất biến định mức).
 
 ### 17.5 Checklist hằng ngày (M8)
 
@@ -1410,9 +1413,12 @@ Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có 
 - **Tại quán?** — IP công khai so với `settings.ops.storeIps`. Owner/manager đang ở quán bấm [Đây là Wi-Fi quán] để cập nhật khi nhà mạng đổi IP. IP lạ → vẫn ghi nhưng gắn cờ `off_site`, quản lý xem lại khi duyệt (**gắn cờ, không chặn**). Không dùng selfie/GPS.
 - Quên ra ca → cron 03:00 gắn cờ `forgot_out`, không tự cộng giờ; quản lý sửa kèm lý do.
 - **Lịch ca** `shift_plans` (`staff_id`, `date`, `start`, `end`): quản lý xếp theo tuần, nút [Chép tuần trước] → dùng để tính đi muộn/về sớm.
-- `time_entries`: `id`, `staff_id`, `clock_in`, `clock_out` null, `in_ip`, `out_ip`, `flags` text[] (`off_site·forgot_out·edited`), `edit_reason` null. Mọi sửa giờ ghi `ops_events`.
+- `time_entries`: `id`, `staff_id`, `clock_in`, `clock_out` null, `in_ip`, `out_ip`, `flags` text[] (`off_site·forgot_out·late_out·edited`), `edit_reason` null. Mọi sửa giờ ghi `ops_events`.
 
-**Tính giờ** (`worktime.ts`, giờ VN): cắt mỗi lượt thành phút **thường · ban đêm (22:00–06:00, phụ cấp ≥ 30%) · ngày lễ (`holidays`, hệ số mặc định 3,0) · làm thêm (vượt 8 giờ/ngày, 1,5)**. Bảng `holidays` (`date`, `name`, `multiplier`) do owner nhập; nhắc trước Tết âm lịch mỗi năm. Tính theo phút thực, không làm tròn (owner có thể bật làm tròn ở Cài đặt).
+**Tính giờ** (`worktime.ts`, giờ VN): cắt mỗi lượt thành phút **thường · ban đêm (22:00–06:00, phụ cấp +30%) · ngày lễ (`holidays`, hệ số mặc định 3,0) · làm thêm (vượt 8 giờ/ngày, 1,5)**.
+- ✅ Quán đóng 22:00 nhưng **dọn dẹp sau 22:00 vẫn là giờ làm** → tính lương thường + phụ cấp đêm 30% cho phần sau 22:00 (BLLĐ 2019 Điều 98 — không thoả thuận bỏ được). Ví dụ 20 phút × 20.000đ × 30% = 2.000đ.
+- ✅ **Ca tối bắt đầu trễ không phát sinh làm thêm:** làm thêm chỉ tính khi **tổng giờ trong ngày vượt 8 giờ**, không tính theo "về sau giờ kết thúc lịch". Ca 16:00–22:15 = 6 giờ 15 phút → không có 150%.
+- Ra ca muộn hơn lịch > 15 phút → cờ `late_out`: quản lý xác nhận (dọn dẹp thật → giữ; ngồi lại không làm → sửa giờ kèm lý do). Gợi ý vận hành: ngừng nhận khách 21:30 để dọn xong trước 22:00. Bảng `holidays` (`date`, `name`, `multiplier`) do owner nhập; nhắc trước Tết âm lịch mỗi năm. Tính theo phút thực, không làm tròn (owner có thể bật làm tròn ở Cài đặt).
 
 **Bảng công tháng** `timesheets` (`staff_id`, `period` `YYYY-MM`, các tổng phút, số lần muộn, `status`, `snapshot` jsonb, `snapshot_hash`):
 
@@ -1424,7 +1430,7 @@ submitted ─(nhân viên "Chưa đồng ý" + lý do)─▶ draft
 
 **Lương (chỉ owner):**
 - `pay_rates`: `staff_id`, `hourly_rate` int, `effective_from` — **có lịch sử**, tăng lương không làm đổi kỳ cũ. Không cho lưu dưới `settings.payroll.minHourly` (**vùng III: 20.000đ/giờ**, owner cập nhật khi Nhà nước đổi mức).
-- Thưởng: **doanh thu 1%** và **tuân thủ** (cách tính: §16 #14, #15; tiêu chí tuân thủ tính tự động từ đi muộn · checklist · lệch két, owner sửa được). Bao ăn uống không tính vào lương.
+- Thưởng ✅: **quỹ 1% tổng doanh thu tháng** (café theo Sapo + pizza hoàn tất) **chia theo tỉ lệ giờ công** của mọi nhân viên (cả café & pizza); **tuân thủ 300.000đ/tháng** (tiêu chí §16 #15 tính tự động, owner sửa được trước khi duyệt). Bao ăn uống không tính vào lương.
 - `payslips`: `staff_id`, `period`, `lines` jsonb (`base · night · overtime · holiday · revenue_bonus · compliance_bonus · adjustment`, mỗi dòng `{ label, minutes?, rate?, amount }`), `total` int, `status` (`draft → approved → paid`), `paid_at`, `paid_method`, `staff_ack_at`. Chỉ tạo từ bảng công đã `acknowledged`.
 - Lịch: **ngày 1** cron tạo bảng công nháp tháng trước + Telegram nhắc → quản lý gửi → nhân viên xác nhận → owner duyệt lương → **trả ngày 5** → nhân viên bấm [Đã nhận lương].
 - Nhân viên xem phiếu lương của mình (bảng kê trả lương — BLLĐ 2019 Điều 95), in/lưu PDF được.
@@ -1446,13 +1452,12 @@ submitted ─(nhân viên "Chưa đồng ý" + lý do)─▶ draft
 - **Kiểm kê tuần** `stock_counts`: đếm thật các mặt hàng `track_stock` → dòng `adjust` = thật − sổ → **hao hụt (số lượng & tiền)**.
 - Tab Chuẩn bị (§10.2) thêm cột "Tồn / đủ / thiếu" cạnh mỗi nguyên liệu; dưới `par_level` hoặc sắp hết hạn → Telegram + mục trong checklist mở ca.
 
-### 17.9 Dòng tiền vào: một tài khoản ngân hàng hộ kinh doanh
+### 17.9 Dòng tiền vào: hai tài khoản tách theo mảng
 
-✅ Chủ quán uỷ quyền quyết định:
-- **Mọi khoản chuyển khoản (pizza + café) về một tài khoản VietinBank của hộ kinh doanh**, liên kết SePay. Không cần rút tay từ MoMo, một sao kê cho kê khai thuế, đối soát tự động.
-- Café: in **QR VietQR tĩnh** (không số tiền, không nội dung) đặt ở quầy. Khách quen dùng MoMo vẫn quét được QR ngân hàng bằng app MoMo. Ví MoMo kinh doanh giữ trong thời gian chuyển đổi; tiền MoMo nhập ở ô "khác" khi đóng ca.
-- **Đổi xử lý SePay (M7):** `payments.category` (`order·cafe·unknown`). Nội dung có mã đơn → như cũ. **Không có mẫu mã đơn** → `cafe`, **không** gửi cảnh báo từng khoản (chỉ vào đối soát ca §17.3). Có mẫu mã `TH…` nhưng không khớp / sai số tiền → cảnh báo như cũ.
-- Trước khi chuyển: kiểm tra gói SePay hỗ trợ VietinBank và hạn mức số giao dịch/tháng (café làm tăng số giao dịch).
+✅ Chủ quán chốt 31/10/2026:
+- **Pizza → tài khoản TPBank riêng** của hộ kinh doanh, liên kết SePay (VietQR + tự xác nhận như M6). Số giao dịch ít (chỉ T6–CN) → phí SePay theo giao dịch không đáng kể. Mọi khoản vào TK này đều thuộc pizza → giữ nguyên cảnh báo "không khớp đơn" của §11.2 (hiếm, đáng xem).
+- **Café → giữ MoMo kinh doanh** (nhiều giao dịch nhỏ, biên mỏng — phí ≥ 500đ/giao dịch qua dịch vụ đối soát là không đáng). Không tích hợp tự động; tiền MoMo nhập ở ô "chuyển khoản/MoMo" khi đóng ca (§17.3), chủ quán đối chiếu với báo cáo ngày của MoMo.
+- Sổ sách vẫn **chung một app**: chỉ số §17.10 cộng doanh thu hai mảng. Khi kê khai, mỗi mảng có sao kê riêng — dễ tách doanh thu theo ngành nếu thuế suất khác nhau (nhờ kế toán xác nhận).
 
 ### 17.10 Chỉ số quản lý (M11)
 
@@ -1470,9 +1475,9 @@ Kho café (M11): định lượng đồ uống + **nhập file Excel xuất từ
 
 ### 17.11 Route, env, cron
 
-- Route mới (bổ sung §5.4): `/admin/van-hanh?tab=ca·chi·viec·so-tay·cong·luong·kho·chi-so` (`&trang=` cho sổ tay), `POST /api/webhooks/telegram`.
-- Env mới: `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` (tuỳ chọn, mặc định = `TELEGRAM_CHAT_ID`), `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (**chỉ server**, cho Storage).
-- `settings.ops`: `{ cashTolerance: 20000, pettyFloat: 1000000, storeIps: [], expenseKeywords: {…} }` · `settings.payroll`: `{ minHourly: 20000, payDay: 5, revenueBonusPct: 1, complianceBonus: … }`.
+- Route mới (bổ sung §5.4): `/admin/van-hanh?tab=…` (M7: `ca · chi · nhan-vien`; sau: `viec · so-tay · cong · luong · kho · chi-so`, `&trang=` cho sổ tay), `POST /api/webhooks/telegram`, `GET /api/ops/files/[id]`.
+- Env mới: `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` (tuỳ chọn, mặc định = `TELEGRAM_CHAT_ID`).
+- `settings.ops` (M7): `{ cashTolerance: 20000, pettyFloat: 1000000 }` — owner sửa trong tab Ca & két; M9 thêm `storeIps`; từ khoá nhóm chi đang là hằng `DEFAULT_EXPENSE_KEYWORDS` (`lib/domain/expense-command.ts`) · `settings.payroll`: `{ minHourly: 20000, payDay: 5, revenueBonusPct: 1, complianceBonus: … }`.
 - Cron daily thêm: gắn cờ quên ra ca, cảnh báo hết hạn/dưới mức tồn; ngày 1: tổng hợp chi phí + bảng công nháp; ngày 3: nhắc ai chưa xác nhận; ngày 5: nhắc trả lương.
 - Trang admin không tính vào ngân sách JS của `/` (§13.1); vẫn giữ nhẹ cho máy Android tầm trung.
 
@@ -1514,7 +1519,7 @@ Kho café (M11): định lượng đồ uống + **nhập file Excel xuất từ
 | `bbq-tray` Khay BBQ | khay | | | 1 | 1 | | | |
 | `cold-brew-bottle` (storage `quầy Rêu`) | chai | | | | | | | 1 |
 
-**Lịch mẫu:** T4–CN, mẻ `17:00/18:00/19:00`, `oven_lead_min = 20`, `cutoff_time = 15:30`, `cap_pan = 4`, `cap_bbq = 4`.
+**Lịch mẫu:** T6–CN (✅ 31/10/2026), mẻ `17:00/18:00/19:00`, `oven_lead_min = 20`, `cutoff_time = 15:30`, `cap_pan = 4`, `cap_bbq = 4`.
 
 **Khu vực & tuyến (placeholder)**
 
