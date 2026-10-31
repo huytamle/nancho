@@ -96,9 +96,9 @@ export function tally(orders: OrderWithItems[], products: Map<string, Product>):
   return counts;
 }
 
-function byKind(counts: Map<string, Count>, products: Product[], kind: Kind): NameQty[] {
+function byKind(counts: Map<string, Count>, products: Product[], ...kinds: Kind[]): NameQty[] {
   return products
-    .filter((p) => p.kind === kind && counts.has(p.id))
+    .filter((p) => kinds.includes(p.kind) && counts.has(p.id))
     .map((p) => ({ name: p.name, qty: totalOf(counts.get(p.id)!) }));
 }
 
@@ -206,7 +206,7 @@ export function buildPrepReport(input: {
       ovenLabel: vnTimeLabel(b.ovenAt),
       pizza: byKind(bc, products, "pizza"),
       bbq: byKind(bc, products, "bbq"),
-      addons: byKind(bc, products, "addon"),
+      addons: byKind(bc, products, "addon", "drink"),
       routes: [...routeGroups.values()]
         .sort((a, b) => a.route.sort - b.route.sort)
         .map(({ route, stops }) => ({

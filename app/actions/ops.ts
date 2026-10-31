@@ -1,6 +1,7 @@
 "use server";
 
 import { eq } from "drizzle-orm";
+import { refresh } from "next/cache";
 import { after } from "next/server";
 import * as z from "zod";
 import type { AdminResult } from "@/lib/admin-contract";
@@ -32,8 +33,14 @@ import {
   saveFile,
   saveOpsSettingsCore,
   setExpenseCategoryCore,
+  linkClerkCore,
+  requestStaffAccessCore,
+  reviewStaffRequestCore,
   setStaffRolesCore,
 } from "@/lib/server/dal/ops";
+import { clerkUserId } from "@/lib/server/auth/clerk";
+import { PIN_RE } from "@/lib/server/dal/staff";
+import { clientIp, MIN, rateLimit } from "@/lib/server/rate-limit";
 import { sendDayReport } from "@/lib/server/dal/reports";
 import { sendTelegram, telegramApi } from "@/lib/server/notify/telegram";
 import { runOps, notifyOps } from "@/lib/server/ops/run";
@@ -160,6 +167,44 @@ export async function reimbursePocket(raw: z.input<typeof Reimburse>) {
 const Roles = z.object({ staffId: id, roles: z.array(z.enum(ROLES)).min(1).max(ROLES.length) });
 export async function setStaffRoles(raw: z.input<typeof Roles>) {
   return run(Roles, raw, (i, actor, now) => setStaffRolesCore(i.staffId, i.roles, { actor, now }));
+}
+
+// ── Nhân viên qua Clerk (M12) ──
+
+const Request = z.object({ name: z.string().trim().min(2).max(40), roles: z.array(z.enum(ROLES)).min(1).max(ROLES.length), pin: z.string().regex(PIN_RE) });
+/** Người đã đăng nhập Clerk xin vào nội bộ (chưa là nhân viên → không qua runOps). */
+export async function requestStaffAccess(raw: z.input<typeof Request>): Promise<AdminResult> {
+  const parsed = Request.safeParse(raw);
+  if (!parsed.success) return { ok: false, reason: "invalid" };
+  try {
+    const uid = await clerkUserId();
+    if (!uid) return { ok: false, reason: "forbidden" };
+    const now = serverNow();
+    if (!(await rateLimit([{ key: "staff-request:ip:" + (await clientIp()), limit: 5, windowSec: 60 * MIN }], now))) return { ok: false, reason: "rate_limited" };
+    const res = await requestStaffAccessCore({ clerkUserId: uid, ...parsed.data }, now);
+    if (res.ok) {
+      notify("🙋 " + parsed.data.name + " xin vào nội bộ — duyệt ở Vận hành → Nhân viên.");
+      refresh();
+    }
+    return res;
+  } catch (err) {
+    console.error(JSON.stringify({ evt: "staff_request_failed", error: String(err) }));
+    return { ok: false, reason: "server_error" };
+  }
+}
+
+const ReviewRequest = z.object({ staffId: id, decision: z.enum(["approve", "reject"]), roles: z.array(z.enum(ROLES)).max(ROLES.length) });
+export async function reviewStaffRequest(raw: z.input<typeof ReviewRequest>) {
+  return run(ReviewRequest, raw, (i, actor, now) => reviewStaffRequestCore(i, { actor, now }));
+}
+
+/** Gắn tài khoản Clerk đang đăng nhập vào nhân viên của phiên PIN hiện tại. */
+export async function linkClerk(): Promise<AdminResult> {
+  return run(z.object({}), {}, async (_i, actor) => {
+    const uid = await clerkUserId();
+    if (!uid) return { ok: false, reason: "forbidden" };
+    return linkClerkCore(actor.id, uid);
+  });
 }
 
 const OpsSettings = z.object({ cashTolerance: z.number().int().min(0).max(1_000_000), pettyFloat: z.number().int().min(0).max(50_000_000) });

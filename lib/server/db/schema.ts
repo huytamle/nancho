@@ -31,6 +31,7 @@ import type { CashCounts } from "@/lib/domain/cash";
 import type { ChecklistDone, ChecklistItem } from "@/lib/domain/checklist";
 import type { ExpenseCategory } from "@/lib/domain/expense-command";
 import type { Segment } from "@/lib/domain/metrics";
+import type { VoucherKind } from "@/lib/domain/promo";
 import type { PayLine } from "@/lib/domain/payroll";
 import type { BillLine, CountClass, CountLine, FormulaLine, WasteReason } from "@/lib/domain/stock";
 import type { Role } from "@/lib/domain/roles";
@@ -42,7 +43,7 @@ const isoDate = () => date({ mode: "string" }).$type<ISODate>();
 const createdAt = () => tstz().notNull().defaultNow();
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
-export const productKind = pgEnum("product_kind", ["pizza", "bbq", "combo", "addon"]);
+export const productKind = pgEnum("product_kind", ["pizza", "bbq", "combo", "addon", "drink", "cafe"]);
 export const dayStatus = pgEnum("day_status", ["open", "closed", "paused"]);
 export const batchStatus = pgEnum("batch_status", ["open", "closed", "baking", "done"]);
 export const channel = pgEnum("channel", ["web", "phone", "zalo", "walkin", "grab", "shopee"]);
@@ -85,6 +86,8 @@ export const products = pgTable(
     short: text().notNull(),
     description: text(),
     price: integer().notNull(),
+    /** Giá lẻ để gạch ngang khi bán kèm (M12, nước lon) — chỉ hiển thị, server tính theo `price`. */
+    listPrice: integer(),
     image: text().notNull(),
     badge: text(),
     usesPan: smallint().notNull().default(0),
@@ -197,9 +200,12 @@ export const slotTemplates = pgTable(
     cutoffTime: time().notNull(),
     capPan: smallint().notNull(),
     capBbq: smallint().notNull(),
+    /** M12: `cafe` = khung giao cà phê (ready = hết khung, ovenLead = độ dài khung, cap = 0 = không giới hạn). */
+    segment: text().$type<Segment>().notNull().default("pizza"),
     isActive: boolean().notNull().default(true),
   },
   (t) => [
+    check("slot_templates_segment_check", sql`${t.segment} IN ('pizza', 'cafe')`),
     unique("slot_templates_weekday_ready_time_key").on(t.weekday, t.readyTime),
     check("slot_templates_weekday_check", sql`${t.weekday} BETWEEN 0 AND 6`),
     check("slot_templates_cutoff_check", sql`${t.cutoffTime} < ${t.readyTime}`),
@@ -231,12 +237,18 @@ export const batches = pgTable(
     usedPan: smallint().notNull().default(0),
     usedBbq: smallint().notNull().default(0),
     status: batchStatus().notNull().default("open"),
+    /** M12: `cafe` = khung giao cà phê; ovenAt = đầu khung, readyAt = cuối khung, cutoffAt nằm trong khung. */
+    segment: text().$type<Segment>().notNull().default("pizza"),
   },
   (t) => [
     unique("batches_service_date_ready_at_key").on(t.serviceDate, t.readyAt),
     check("batches_capacity_check", sql`${t.usedPan} <= ${t.capPan} AND ${t.usedBbq} <= ${t.capBbq}`),
     check("batches_used_check", sql`${t.usedPan} >= 0 AND ${t.usedBbq} >= 0`),
-    check("batches_times_check", sql`${t.cutoffAt} <= ${t.ovenAt} AND ${t.ovenAt} <= ${t.readyAt}`),
+    check("batches_segment_check", sql`${t.segment} IN ('pizza', 'cafe')`),
+    check(
+      "batches_times_check",
+      sql`${t.ovenAt} <= ${t.readyAt} AND ${t.cutoffAt} <= ${t.readyAt} AND (${t.segment} = 'cafe' OR ${t.cutoffAt} <= ${t.ovenAt})`,
+    ),
   ],
 ).enableRLS();
 
@@ -315,6 +327,10 @@ export const orders = pgTable(
     cancelReason: text(),
     /** Hạn giữ suất cho đơn bắt buộc trả trước (§18.2); null = không có hạn. */
     holdUntil: tstz(),
+    /** M12: khách đăng nhập lúc đặt (tích điểm, lịch sử). */
+    memberId: uuid().references((): AnyPgColumn => members.id, { onDelete: "set null" }),
+    /** M12: mã giới thiệu đã dùng cho đơn đầu tiên — người giới thiệu nhận quà khi đơn hoàn tất. */
+    referrerId: uuid().references((): AnyPgColumn => members.id, { onDelete: "set null" }),
     createdAt: createdAt(),
     updatedAt: tstz()
       .notNull()
@@ -406,6 +422,10 @@ export const staff = pgTable("staff", {
   pinHash: text().notNull(),
   isActive: boolean().notNull().default(true),
   telegramUserId: bigint({ mode: "number" }).unique(),
+  /** M12: tài khoản Clerk của nhân viên. */
+  clerkUserId: text().unique(),
+  /** M12: tự đăng ký qua Clerk, chờ quản lý (vai nghiệp vụ) hoặc chủ quán (vai quản lý) duyệt; `roles` = vai xin. */
+  pending: boolean().notNull().default(false),
 }, (t) => [check("staff_roles_check", sql`cardinality(${t.roles}) > 0`)]).enableRLS();
 
 export const settings = pgTable("settings", {
@@ -912,6 +932,70 @@ export const cafeSales = pgTable("cafe_sales", {
     .references(() => staff.id),
   createdAt: createdAt(),
 }).enableRLS();
+
+// ── Thành viên, điểm & mã ưu đãi (M12) ──
+
+/** Khách đăng nhập bằng Clerk. Không gắn với `customers` theo SĐT: ai cũng gõ được SĐT người khác. */
+export const members = pgTable("members", {
+  id: uuid().primaryKey().defaultRandom(),
+  clerkUserId: text().notNull().unique(),
+  name: text().notNull(),
+  email: text(),
+  referralCode: text().notNull().unique(),
+  createdAt: createdAt(),
+}).enableRLS();
+
+/** Sổ điểm: số dư = SUM(delta). Mỗi đơn cộng điểm một lần (unique theo đơn). */
+export const pointMoves = pgTable(
+  "point_moves",
+  {
+    id: serial().primaryKey(),
+    memberId: uuid()
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    delta: integer().notNull(),
+    reason: text().$type<"order" | "redeem">().notNull(),
+    orderId: uuid().references(() => orders.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.memberId),
+    uniqueIndex("point_moves_order_key").on(t.orderId).where(sql`${t.reason} = 'order'`),
+    check("point_moves_reason_check", sql`${t.reason} IN ('order', 'redeem')`),
+  ],
+).enableRLS();
+
+/**
+ * Mã giảm tiền cố định. Chủ sở hữu: thành viên (`member_id`) hoặc SĐT của khách vãng lai (`customer_id`).
+ * Dùng xong ghi `used_order_id`; đơn huỷ thì trả mã lại.
+ */
+export const vouchers = pgTable(
+  "vouchers",
+  {
+    id: serial().primaryKey(),
+    code: text().notNull().unique(),
+    kind: text().$type<VoucherKind>().notNull(),
+    amount: integer().notNull(),
+    minSubtotal: integer().notNull().default(0),
+    memberId: uuid().references(() => members.id, { onDelete: "cascade" }),
+    customerId: uuid().references(() => customers.id, { onDelete: "cascade" }),
+    sourceOrderId: uuid().references(() => orders.id, { onDelete: "set null" }),
+    usedOrderId: uuid()
+      .unique()
+      .references(() => orders.id, { onDelete: "set null" }),
+    expiresAt: tstz().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.memberId),
+    index().on(t.customerId),
+    // Một đơn chỉ sinh một mã mỗi loại (đánh giá, thưởng giới thiệu).
+    uniqueIndex("vouchers_source_kind_key").on(t.sourceOrderId, t.kind),
+    check("vouchers_kind_check", sql`${t.kind} IN ('welcome', 'review', 'referral', 'points')`),
+    check("vouchers_amount_check", sql`${t.amount} > 0 AND ${t.minSubtotal} >= 0`),
+    check("vouchers_owner_check", sql`${t.memberId} IS NOT NULL OR ${t.customerId} IS NOT NULL`),
+  ],
+).enableRLS();
 
 export type Order = typeof orders.$inferSelect;
 export type BatchRow = typeof batches.$inferSelect;

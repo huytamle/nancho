@@ -17,7 +17,7 @@ const Input = z.object({
   comment: z.string().max(COMMENT_MAX),
 });
 
-export type FeedbackResult = { ok: true } | { ok: false; reason: "not_found" | "closed" | "locked" | "invalid" | "rate_limited" | "server_error" };
+export type FeedbackResult = { ok: true; voucher: string | null } | { ok: false; reason: "not_found" | "closed" | "locked" | "invalid" | "rate_limited" | "server_error" };
 
 export async function submitFeedback(raw: z.input<typeof Input>): Promise<FeedbackResult> {
   const parsed = Input.safeParse(raw);
@@ -37,7 +37,7 @@ export async function submitFeedback(raw: z.input<typeof Input>): Promise<Feedba
     const res = await submitFeedbackCore(token, input, { now });
     if (!res.ok) return res;
     after(() => sendTelegram(res.telegram).then(() => undefined));
-    return { ok: true };
+    return { ok: true, voucher: res.voucher };
   } catch (err) {
     console.error(JSON.stringify({ evt: "feedback_failed", error: String(err) }));
     return { ok: false, reason: "server_error" };

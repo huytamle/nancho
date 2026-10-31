@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { seedIngredients, seedPickupPoints, seedProducts, seedRecipes, seedZones } from "@/data/seed";
+import { DRINKS, seedIngredients, seedPickupPoints, seedProducts, seedRecipes, seedZones } from "@/data/seed";
 import { seedFormulas, seedStockIngredients } from "@/data/seed-stock";
 import { vnInstant, type ISODate } from "@/lib/domain/time";
 import { closeDb, getDb } from "@/lib/server/db/client";
@@ -26,7 +26,7 @@ describe("migration", () => {
     const tables = await db.execute<{ relname: string; relrowsecurity: boolean }>(
       sql`SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'`,
     );
-    expect(tables.length).toBe(43);
+    expect(tables.length).toBe(46);
     expect(tables.filter((r) => !r.relrowsecurity)).toEqual([]);
     const policies = await db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'public'`);
     expect(policies.length).toBe(0);
@@ -42,7 +42,7 @@ describe("seed", () => {
     expect(await count(t.recipeLines)).toBe(seedRecipes.length);
     expect(await count(t.zones)).toBe(seedZones.length);
     expect(await count(t.pickupPoints)).toBe(seedPickupPoints.length);
-    expect(await count(t.slotTemplates)).toBe(9);
+    expect(await count(t.slotTemplates)).toBe(9 + 7 * 2); // + 2 khung cà phê mỗi ngày (M12)
     expect(await count(t.settings)).toBe(6);
   });
 
@@ -76,7 +76,7 @@ describe("loadCatalog", () => {
     expect(c.products.map((p) => p.id)).toEqual(seedProducts.filter((p) => p.id !== "bbq-2").map((p) => p.id));
     const combo = c.products[0];
     expect(combo.comboConfig?.[0].options).toEqual(["pepperoni-pan", "garlic-cheese-pan"]);
-    expect(combo.upsellIds).toEqual(["sauce-garlic-butter", "sauce-bbq-smoky", "cold-brew-reu"]);
+    expect(combo.upsellIds).toEqual(["sauce-garlic-butter", "sauce-bbq-smoky", "cold-brew-reu", ...DRINKS]);
     expect(c.zones).toHaveLength(seedZones.length);
     expect(c.pickupPoints[0].giftProductId).toBe("sauce-garlic-butter");
   });
@@ -85,8 +85,8 @@ describe("loadCatalog", () => {
 describe("ensureBatches", () => {
   it("seed tạo mẻ cho hôm nay + daysAhead, giờ theo VN; bỏ qua ngày lò nghỉ", async () => {
     const days = await loadServiceDays(SAT, "2026-11-10" as ISODate, db);
-    // T7, CN mở; T2, T3 nghỉ → không có service_day.
-    expect(days.map((d) => d.date)).toEqual(["2026-11-07", "2026-11-08"]);
+    // T7, CN có mẻ lò; T2, T3 lò nghỉ (vẫn có ngày phục vụ vì có khung cà phê — M12).
+    expect(days.filter((d) => d.batches.length > 0).map((d) => d.date)).toEqual(["2026-11-07", "2026-11-08"]);
     const [b17] = days[0].batches;
     expect(b17.readyAt.toISOString()).toBe("2026-11-07T10:00:00.000Z");
     expect(b17.ovenAt.toISOString()).toBe("2026-11-07T09:40:00.000Z");
@@ -102,14 +102,14 @@ describe("ensureBatches", () => {
     const [first] = await db.select().from(t.batches).where(eq(t.batches.serviceDate, "2026-11-08")).limit(1);
     await db.delete(t.batches).where(eq(t.batches.id, first.id));
     await expect(ensureBatches(SAT, 4, db)).resolves.toEqual({ days: 0, batches: 0 });
-    expect(await db.$count(t.batches, eq(t.batches.serviceDate, "2026-11-08"))).toBe(2);
+    expect(await db.$count(t.batches, eq(t.batches.serviceDate, "2026-11-08"))).toBe(3 + 2 - 1);
   });
 
   it("chạy song song vẫn chỉ tạo mỗi ngày một lần", async () => {
     const results = await Promise.all([1, 2, 3].map(() => ensureBatches("2026-11-09" as ISODate, 7, db)));
-    // T6 13, T7 14, CN 15 → 3 ngày × 3 mẻ, tổng qua mọi lần gọi.
-    expect(results.reduce((n, r) => n + r.batches, 0)).toBe(9);
-    expect(await db.$count(t.serviceDays)).toBe(5);
+    // Ngày mới 12–15: T6 13, T7 14, CN 15 → 3 × 3 mẻ + 4 ngày × 2 khung cà phê, tổng qua mọi lần gọi.
+    expect(results.reduce((n, r) => n + r.batches, 0)).toBe(9 + 8);
+    expect(await db.$count(t.serviceDays)).toBe(9); // 07 … 15 (mỗi ngày đều có khung cà phê)
   });
 });
 

@@ -7,6 +7,8 @@ import {
   seedProducts,
   seedRecipes,
   seedRoutes,
+  DRINKS,
+  seedCafeWindows,
   seedSlotTemplate,
   seedZones,
 } from "@/data/seed";
@@ -37,6 +39,19 @@ export async function seedStatic(db: Db = getDb()) {
       .insert(t.slotTemplates)
       .values(weekdays.flatMap((weekday) => readyTimes.map((readyTime) => ({ weekday, readyTime, ovenLeadMin, cutoffTime, capPan, capBbq }))))
       .onConflictDoNothing();
+
+    // M12: khung giao cà phê mỗi ngày + nước lon gợi ý kèm cho món chính đã có từ trước (chỉ thêm, không bỏ).
+    await tx
+      .insert(t.slotTemplates)
+      .values(
+        [0, 1, 2, 3, 4, 5, 6].flatMap((weekday) =>
+          seedCafeWindows.map((w) => ({ weekday, readyTime: w.end, ovenLeadMin: w.lengthMin, cutoffTime: w.cutoff, capPan: 0, capBbq: 0, segment: "cafe" as const })),
+        ),
+      )
+      .onConflictDoNothing();
+    await tx.execute(sql`
+      UPDATE products SET upsell_ids = ARRAY(SELECT x FROM unnest(upsell_ids || ARRAY[${sql.join(DRINKS.map((d) => sql`${d}`), sql`, `)}]::text[]) WITH ORDINALITY u(x, i) GROUP BY x ORDER BY min(i))
+      WHERE kind IN ('pizza', 'bbq', 'combo') AND NOT (upsell_ids @> ARRAY[${sql.join(DRINKS.map((d) => sql`${d}`), sql`, `)}]::text[])`);
 
     await tx
       .insert(t.settings)

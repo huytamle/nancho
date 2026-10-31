@@ -6,6 +6,7 @@ import type { ISODate } from "@/lib/domain/time";
 import type { DayStatus, OrderStatus, PaymentMethod } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
+import { releaseVouchers, rewardCompleted } from "@/lib/server/dal/promo";
 import { deductSale } from "@/lib/server/dal/stock";
 
 // Thao tác của Kitchen Dashboard (§8.2, §10). Server Action lo zod + requireStaff; nghiệp vụ ở đây để
@@ -80,6 +81,9 @@ export async function advanceOrdersInTx(
         )
         .where(eq(t.customers.id, o.customerId));
     }
+    // M12: điểm thành viên + thưởng người giới thiệu khi hoàn tất; huỷ thì trả mã ưu đãi cho khách.
+    if (to === "completed") await rewardCompleted(tx, o, ctx.now);
+    if (to === "cancelled") await releaseVouchers(tx, [o.id]);
     await tx.insert(t.orderEvents).values({
       orderId: o.id,
       type: to === "cancelled" ? "cancelled" : "status_changed",

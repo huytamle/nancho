@@ -62,9 +62,37 @@ describe("priceOrder", () => {
     for (const r of [a, b, c]) expect(r.ok && r.items.some((i) => i.isGift)).toBe(false);
   });
 
-  it("add-on mua riêng là một dòng bình thường", () => {
-    const r = priceOrder({ lines: [{ product: P["cold-brew-reu"], qty: 2 }], fulfillment: kp2, shipping: noFree });
-    expect(r).toMatchObject({ ok: true, subtotal: 36_000, total: 46_000 });
+  it("add-on/nước kèm thêm thành dòng riêng được, nhưng chỉ khi có pizza/BBQ (M12)", () => {
+    const can = { product: P["drink-pepsi"], qty: 2 };
+    const r = priceOrder({ lines: [pizza, { product: P["cold-brew-reu"], qty: 2 }, can], fulfillment: kp2, shipping: noFree });
+    expect(r).toMatchObject({ ok: true, subtotal: 149_000 + 36_000 + 20_000 });
+    expect(priceOrder({ lines: [can], fulfillment: kp2, shipping: noFree })).toEqual({ ok: false, error: { reason: "extras_only" } });
+    // Nước gắn vào combo như add-on (giá kèm, không phải giá lẻ).
+    const withCans = priceOrder({ lines: [{ ...combo, addons: [{ product: P["drink-sting"], qty: 2 }] }], fulfillment: kp2, shipping: noFree });
+    expect(withCans).toMatchObject({ ok: true, subtotal: 289_000 + 20_000 });
+  });
+
+  it("cà phê: không chung đơn với pizza, tối thiểu 50.000đ, chỉ giao (M12)", () => {
+    const latte = { product: P["cafe-latte"], qty: 1 };
+    expect(priceOrder({ lines: [latte, pizza], fulfillment: kp2, shipping: noFree })).toEqual({ ok: false, error: { reason: "mixed_segment" } });
+    expect(priceOrder({ lines: [latte], fulfillment: kp2, shipping: noFree })).toEqual({ ok: false, error: { reason: "cafe_min", min: 50_000 } });
+    expect(priceOrder({ lines: [{ ...latte, qty: 2 }], fulfillment: reu, shipping: noFree })).toEqual({ ok: false, error: { reason: "cafe_pickup" } });
+    expect(priceOrder({ lines: [{ ...latte, qty: 2 }, { product: P["drink-pepsi"], qty: 1 }], fulfillment: kp2, shipping: noFree })).toEqual({
+      ok: false,
+      error: { reason: "extras_only" },
+    });
+    expect(priceOrder({ lines: [{ ...latte, qty: 2 }], fulfillment: kp2, shipping: noFree })).toMatchObject({ ok: true, subtotal: 78_000, total: 88_000 });
+  });
+
+  it("giảm từ mã ưu đãi: số nguyên, không âm, không vượt tạm tính (M12)", () => {
+    expect(priceOrder({ lines: [pizza], fulfillment: kp2, shipping: noFree, discount: 15_000 })).toMatchObject({
+      ok: true,
+      subtotal: 149_000,
+      discount: 15_000,
+      total: 144_000,
+    });
+    expect(priceOrder({ lines: [pizza], fulfillment: kp2, shipping: noFree, discount: 999_999 })).toMatchObject({ discount: 149_000, total: 10_000 });
+    expect(priceOrder({ lines: [pizza], fulfillment: kp2, shipping: noFree, discount: -5 })).toMatchObject({ discount: 0 });
   });
 
   it("từ chối số lượng không hợp lệ", () => {

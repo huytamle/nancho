@@ -5,11 +5,13 @@ import { vnDateOf } from "@/lib/domain/time";
 import { getDb, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { ratableFor } from "@/lib/server/dal/orders";
+import { rewardReview } from "@/lib/server/dal/promo";
 import { feedbackText } from "@/lib/server/notify/messages";
 
 // Chấm điểm khẩu vị (§18.5). Không cần đăng nhập: token đơn 128-bit là đủ; Server Action lo rate-limit.
 
-export type FeedbackOutcome = { ok: true; telegram: string } | { ok: false; reason: "not_found" | "closed" | "locked" | "invalid" };
+/** `voucher`: mã cảm ơn cho đơn sau (M12) — null khi đơn chưa hoàn tất. */
+export type FeedbackOutcome = { ok: true; telegram: string; voucher: string | null } | { ok: false; reason: "not_found" | "closed" | "locked" | "invalid" };
 
 export async function submitFeedbackCore(token: string, input: FeedbackInput, ctx: { now: Date; db?: Executor }): Promise<FeedbackOutcome> {
   const db = ctx.db ?? getDb();
@@ -36,9 +38,11 @@ export async function submitFeedbackCore(token: string, input: FeedbackInput, ct
     .returning({ id: t.feedback.id });
   if (!row) return { ok: false, reason: "locked" };
 
+  const voucher = await rewardReview(o, ctx.now, db);
   const nameOf = new Map(items.map((i) => [i.productId, i.name.replace(/^Pan Pizza /, "").replace(/ — .*$/, "")]));
   return {
     ok: true,
+    voucher,
     telegram: feedbackText({
       seq: o.seq,
       edited: !!existing,

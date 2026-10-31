@@ -53,6 +53,7 @@ function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void 
   const targets = day.batches.filter(
     (b) =>
       b.id !== o.batchId &&
+      b.segment === batch?.segment &&
       (b.status === "open" || b.status === "closed") &&
       b.capPan - b.usedPan >= o.panUnits &&
       b.capBbq - b.usedBbq >= o.bbqUnits,

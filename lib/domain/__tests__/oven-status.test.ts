@@ -17,6 +17,7 @@ function b(date: ISODate, ready: string, over: Partial<Batch> = {}): Batch {
     cutoffAt: vnInstant(date, "15:30"),
     capPan: 4,
     capBbq: 4,
+    segment: "pizza",
     usedPan: 0,
     usedBbq: 0,
     status: "open",
@@ -187,5 +188,18 @@ describe("upcomingSlots", () => {
 
     const evening = upcomingSlots({ now: vnInstant(TODAY, "16:00"), days, settings });
     expect(evening.map((d) => d.date)).toEqual(["2026-11-07"]);
+  });
+});
+
+describe("khung giao cà phê (M12)", () => {
+  const cafe = (start: string, end: string, cutoff: string) =>
+    b(TODAY, end, { segment: "cafe", ovenAt: vnInstant(TODAY, start), cutoffAt: vnInstant(TODAY, cutoff), capPan: 0, capBbq: 0 });
+  it("nhãn là cả khung; không giới hạn khay; đóng sau giờ chốt", () => {
+    const d = day(TODAY, [cafe("08:00", "10:30", "10:00"), cafe("13:30", "15:30", "15:00")]);
+    expect(slotsForDay(d, vnInstant(TODAY, "09:00"), settings).map((s) => [s.readyLabel, s.level, s.segment])).toEqual([
+      ["08:00–10:30", "plenty", "cafe"],
+      ["13:30–15:30", "plenty", "cafe"],
+    ]);
+    expect(slotsForDay(d, vnInstant(TODAY, "10:05"), settings).map((s) => s.level)).toEqual(["closed", "plenty"]);
   });
 });

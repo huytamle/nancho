@@ -1,7 +1,7 @@
 // State machine của Oven Bar (BLUEPRINT §7.2). Số suất luôn lấy từ dữ liệu thật — không bịa.
 
 import { vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
-import type { Batch, ServiceDay } from "@/lib/domain/types";
+import type { Batch, Segment, ServiceDay } from "@/lib/domain/types";
 
 export type SlotLevel = "plenty" | "few" | "last" | "bbq_only" | "full" | "closed";
 
@@ -14,6 +14,8 @@ export type SlotView = {
   remainingPan: number;
   remainingBbq: number;
   level: SlotLevel;
+  /** `cafe`: `readyLabel` là cả khung giao "08:00–10:30". */
+  segment: Segment;
 };
 
 export type DayTab = { date: ISODate; label: string; hasCapacity: boolean };
@@ -28,6 +30,7 @@ export type OvenSettings = { closingSoonMin: number; fewThreshold: number };
 
 function levelOf(b: Batch, now: Date, fewThreshold: number): SlotLevel {
   if (b.status !== "open" || now.getTime() >= b.cutoffAt.getTime()) return "closed";
+  if (b.segment === "cafe") return "plenty"; // khung cà phê không tính khay lò
   const pan = Math.max(0, b.capPan - b.usedPan);
   const bbq = Math.max(0, b.capBbq - b.usedBbq);
   if (pan === 0) return bbq > 0 ? "bbq_only" : "full";
@@ -44,11 +47,12 @@ export function slotsForDay(day: ServiceDay, now: Date, settings: Pick<OvenSetti
       batchId: b.id,
       date: day.date,
       readyAt: b.readyAt.toISOString(),
-      readyLabel: vnTimeLabel(b.readyAt),
+      readyLabel: b.segment === "cafe" ? `${vnTimeLabel(b.ovenAt)}–${vnTimeLabel(b.readyAt)}` : vnTimeLabel(b.readyAt),
       cutoffAt: b.cutoffAt.toISOString(),
       remainingPan: Math.max(0, b.capPan - b.usedPan),
       remainingBbq: Math.max(0, b.capBbq - b.usedBbq),
       level: levelOf(b, now, settings.fewThreshold),
+      segment: b.segment,
     }));
 }
 
@@ -102,6 +106,8 @@ export type OvenSnapshot = {
   serverNow: string;
   status: OvenStatus;
   days: DaySlots[];
+  /** Khung giao cà phê (M12) — cùng dạng với mẻ lò. */
+  cafe: DaySlots[];
   rules: { maxQtyPerLine: number; freeShipFrom: number | null; deliveryWindowMin: number };
 };
 

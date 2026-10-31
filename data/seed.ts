@@ -3,13 +3,19 @@
 
 import type { Ingredient, PickupPoint, Product, RecipeLine, Route, Zone } from "@/lib/domain/types";
 
-const ADDONS = ["sauce-garlic-butter", "sauce-bbq-smoky", "cold-brew-reu"];
+const SAUCES = ["sauce-garlic-butter", "sauce-bbq-smoky", "cold-brew-reu"];
+// M12 — nước lon bán kèm pizza/BBQ. ⚠ Giá MOCK (chủ quán sửa sau): `price` = giá kèm, `listPrice` = giá lẻ gạch ngang.
+export const DRINKS = ["drink-pepsi", "drink-sting", "drink-water", "drink-redbull", "drink-7up", "drink-cacao", "drink-lemon-tea"];
+const ADDONS = [...SAUCES, ...DRINKS];
 
-function product(p: Omit<Product, "badge" | "comboConfig" | "upsellIds" | "supplier" | "isActive" | "isAvailable"> & Partial<Product>): Product {
+type ProductSeed = Omit<Product, "badge" | "comboConfig" | "upsellIds" | "supplier" | "isActive" | "isAvailable" | "listPrice"> & Partial<Product>;
+
+function product(p: ProductSeed): Product {
   return {
     badge: null,
     comboConfig: null,
-    upsellIds: p.kind === "addon" ? [] : ADDONS,
+    listPrice: null,
+    upsellIds: p.kind === "pizza" || p.kind === "bbq" || p.kind === "combo" ? ADDONS : [],
     supplier: null,
     isActive: true,
     isAvailable: true,
@@ -114,6 +120,29 @@ export const seedProducts: Product[] = [
   }),
 ];
 
+const drink = (id: string, name: string, short: string, listPrice: number, price: number, sort: number) =>
+  product({ id, kind: "drink", name, short, price, listPrice, image: `/images/drinks/${id.slice(6)}.svg`, usesPan: 0, usesBbq: 0, sort });
+
+// M12 — cà phê THE HEAT giao trong ngày (khung sáng 08:00–10:30, chiều 13:30–15:30). ⚠ Giá & ảnh MOCK.
+const cafe = (id: string, name: string, short: string, price: number, image: string, sort: number, badge: string | null = null) =>
+  product({ id, kind: "cafe", name, short, price, image, usesPan: 0, usesBbq: 0, sort, badge });
+
+seedProducts.push(
+  drink("drink-pepsi", "Pepsi lon", "Lon 320ml, ướp lạnh", 15_000, 10_000, 20),
+  drink("drink-7up", "7 Up lon", "Lon 320ml, ướp lạnh", 15_000, 10_000, 21),
+  drink("drink-sting", "Sting dâu", "Lon 320ml, ướp lạnh", 15_000, 10_000, 22),
+  drink("drink-redbull", "Bò húc", "Lon 250ml", 20_000, 15_000, 23),
+  drink("drink-lemon-tea", "Trà chanh", "Chai 455ml, ướp lạnh", 15_000, 10_000, 24),
+  drink("drink-cacao", "Cacao sữa", "Lon 240ml", 18_000, 13_000, 25),
+  drink("drink-water", "Nước suối", "Chai 500ml", 10_000, 6_000, 26),
+  cafe("cafe-sua-da", "Cà phê sữa đá", "Phin Robusta, sữa đặc — đậm kiểu Việt", 25_000, "/images/menu/espresso.jpg", 40, "Bán chạy"),
+  cafe("cafe-bac-xiu", "Bạc xỉu", "Nhiều sữa, ít cà phê, béo nhẹ", 29_000, "/images/menu/flat-white.jpg", 41),
+  cafe("cafe-americano", "Americano đá", "Espresso Arabica, thanh và sạch vị", 30_000, "/images/menu/espresso.jpg", 42),
+  cafe("cafe-latte", "Latte", "Espresso + sữa tươi đánh mịn", 39_000, "/images/menu/flat-white.jpg", 43),
+  cafe("cafe-cold-brew", "Cold brew cam sả", "Ủ lạnh 18 giờ, cam tươi, sả thơm", 39_000, "/images/menu/cold-brew.jpg", 44, "Mới"),
+  cafe("cafe-pour-over", "Pour-over", "Pha tay theo mẻ hạt trong tuần", 45_000, "/images/menu/pour-over.jpg", 45),
+);
+
 export const seedIngredients: Ingredient[] = [
   { id: "pan-dough", label: "Đế Pan đã ủ", unit: "đế", unitWeightG: null, storage: "tủ mát", sort: 1 },
   { id: "ribs-bag", label: "Túi sườn sous-vide", unit: "túi", unitWeightG: 500, storage: "tủ đông", sort: 2 },
@@ -190,3 +219,12 @@ export const seedSlotTemplate = {
   capPan: 4,
   capBbq: 4,
 };
+
+/**
+ * M12 — khung giao cà phê mỗi ngày. Lưu như mẻ (segment `cafe`): readyTime = cuối khung, ovenLeadMin = độ dài khung,
+ * cutoff = nhận đơn tới đây. Sức chứa 0/0 = không tính khay lò.
+ */
+export const seedCafeWindows = [
+  { start: "08:00", end: "10:30", cutoff: "10:00", lengthMin: 150 },
+  { start: "13:30", end: "15:30", cutoff: "15:00", lengthMin: 120 },
+] as const;

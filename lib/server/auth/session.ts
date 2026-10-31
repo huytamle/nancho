@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import type { StaffRole } from "@/lib/domain/order-status";
 import { hasRole, orderRoles, primaryOrderRole, type Role } from "@/lib/domain/roles";
+import { clerkUserId } from "@/lib/server/auth/clerk";
 import { getDb } from "@/lib/server/db/client";
 import { staff } from "@/lib/server/db/schema";
 
@@ -71,15 +72,21 @@ export async function deleteSession() {
   (await cookies()).delete(SESSION_COOKIE);
 }
 
-/** Nhân viên của request hiện tại (null nếu chưa đăng nhập / bị khoá). Dedupe trong một request. */
+/**
+ * Nhân viên của request hiện tại (null nếu chưa đăng nhập / bị khoá / chờ duyệt). Dedupe trong một request.
+ * M12: tài khoản Clerk đã gắn với nhân viên được ưu tiên; không có thì dùng phiên PIN (máy chung ở bếp).
+ */
 export const currentStaff = cache(async (): Promise<Staff | null> => {
+  const active = and(eq(staff.isActive, true), eq(staff.pending, false));
+  const cols = { id: staff.id, name: staff.name, roles: staff.roles };
+  const clerkId = await clerkUserId();
+  if (clerkId) {
+    const [s] = await getDb().select(cols).from(staff).where(and(eq(staff.clerkUserId, clerkId), active)).limit(1);
+    if (s) return toStaff(s);
+  }
   const id = await decrypt((await cookies()).get(SESSION_COOKIE)?.value);
   if (id === null) return null;
-  const [s] = await getDb()
-    .select({ id: staff.id, name: staff.name, roles: staff.roles })
-    .from(staff)
-    .where(and(eq(staff.id, id), eq(staff.isActive, true)))
-    .limit(1);
+  const [s] = await getDb().select(cols).from(staff).where(and(eq(staff.id, id), active)).limit(1);
   return s ? toStaff(s) : null;
 });
 

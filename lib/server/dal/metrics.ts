@@ -28,24 +28,31 @@ const instant = (d: ISODate) => vnInstant(d, "00:00");
 const periodSpan = (p: Period): Span => ({ from: periodStart(p), to: periodStart(nextPeriod(p)) });
 
 export async function revenueBetween(db: Executor, s: Span): Promise<Rev> {
-  const [{ pizza }] = await db
-    .select({ pizza: sql<number>`coalesce(sum(${t.orders.total}), 0)::int` })
+  // M12: đơn cà phê ship (khung `cafe`) tính vào doanh thu café, không vào pizza.
+  const [{ pizza, cafeShip }] = await db
+    .select({
+      pizza: sql<number>`coalesce(sum(${t.orders.total}) FILTER (WHERE ${t.batches.segment} = 'pizza'), 0)::int`,
+      cafeShip: sql<number>`coalesce(sum(${t.orders.total}) FILTER (WHERE ${t.batches.segment} = 'cafe'), 0)::int`,
+    })
     .from(t.orders)
+    .innerJoin(t.batches, eq(t.batches.id, t.orders.batchId))
     .where(and(eq(t.orders.status, "completed"), gte(t.orders.serviceDate, s.from), lt(t.orders.serviceDate, s.to)));
   const [{ cafe }] = await db
     .select({ cafe: sql<number>`coalesce(sum(coalesce(${t.shifts.cafeCash}, 0) + coalesce(${t.shifts.cafeTransfer}, 0) + coalesce(${t.shifts.cafeOther}, 0)), 0)::int` })
     .from(t.shifts)
     .where(and(eq(t.shifts.status, "closed"), gte(t.shifts.serviceDate, s.from), lt(t.shifts.serviceDate, s.to)));
-  return { pizza, cafe };
+  return { pizza, cafe: cafe + cafeShip };
 }
 
 /** Doanh thu theo ngày trong khoảng (chỉ ngày có số). */
 async function dailyRevenue(db: Executor, s: Span): Promise<{ date: ISODate; pizza: number; cafe: number }[]> {
-  const pizza = await db
-    .select({ date: t.orders.serviceDate, v: sql<number>`sum(${t.orders.total})::int` })
+  const orderRows = await db
+    .select({ date: t.orders.serviceDate, segment: t.batches.segment, v: sql<number>`sum(${t.orders.total})::int` })
     .from(t.orders)
+    .innerJoin(t.batches, eq(t.batches.id, t.orders.batchId))
     .where(and(eq(t.orders.status, "completed"), gte(t.orders.serviceDate, s.from), lt(t.orders.serviceDate, s.to)))
-    .groupBy(t.orders.serviceDate);
+    .groupBy(t.orders.serviceDate, t.batches.segment);
+  const pizza = orderRows.filter((r) => r.segment === "pizza");
   const cafe = await db
     .select({ date: t.shifts.serviceDate, v: sql<number>`sum(coalesce(${t.shifts.cafeCash}, 0) + coalesce(${t.shifts.cafeTransfer}, 0) + coalesce(${t.shifts.cafeOther}, 0))::int` })
     .from(t.shifts)
@@ -55,6 +62,7 @@ async function dailyRevenue(db: Executor, s: Span): Promise<{ date: ISODate; piz
   const at = (d: ISODate) => days.get(d) ?? days.set(d, { date: d, pizza: 0, cafe: 0 }).get(d)!;
   for (const r of pizza) at(r.date).pizza = r.v;
   for (const r of cafe) at(r.date).cafe = r.v;
+  for (const r of orderRows) if (r.segment === "cafe") at(r.date).cafe += r.v;
   return [...days.values()].sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
@@ -324,7 +332,7 @@ async function opsMetrics(db: Executor, s: Span): Promise<MetricsView["ops"]> {
     .select({ capPan: t.batches.capPan, capBbq: t.batches.capBbq, usedPan: t.batches.usedPan, usedBbq: t.batches.usedBbq })
     .from(t.batches)
     .innerJoin(t.serviceDays, eq(t.serviceDays.date, t.batches.serviceDate))
-    .where(and(gte(t.batches.serviceDate, s.from), lt(t.batches.serviceDate, s.to), ne(t.serviceDays.status, "closed")))
+    .where(and(gte(t.batches.serviceDate, s.from), lt(t.batches.serviceDate, s.to), eq(t.batches.segment, "pizza"), ne(t.serviceDays.status, "closed")))
     .orderBy(asc(t.batches.readyAt));
   return { checklistPct, late, fillRate: fillRate(batches) };
 }

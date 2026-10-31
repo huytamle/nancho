@@ -27,6 +27,7 @@ export function batch(id: number, ready: string, over: Partial<Batch> = {}): Bat
     cutoffAt: vnInstant(DATE, "15:30"),
     capPan: 4,
     capBbq: 4,
+    segment: "pizza",
     usedPan: 0,
     usedBbq: 0,
     status: "open",

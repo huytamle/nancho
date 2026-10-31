@@ -1,8 +1,8 @@
 import "server-only";
-import { asc, between, eq } from "drizzle-orm";
+import { and, asc, between, eq } from "drizzle-orm";
 import { computeOvenStatus, upcomingSlots, type OvenSnapshot, type OvenStatus } from "@/lib/domain/oven-status";
 import { addDays, vnDateOf, vnInstant, vnWeekday, type ISODate } from "@/lib/domain/time";
-import type { ServiceDay } from "@/lib/domain/types";
+import type { Segment, ServiceDay } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import { batches, serviceDays, slotTemplates } from "@/lib/server/db/schema";
 import { releaseExpiredHolds } from "@/lib/server/dal/holds";
@@ -32,33 +32,47 @@ export async function ensureBatches(from: ISODate, days: number, db: Db = getDb(
       .values(wanted.map((date) => ({ date })))
       .onConflictDoNothing()
       .returning({ date: serviceDays.date });
+    const isNew = new Set(created.map((c) => c.date));
 
-    const rows = created.flatMap(({ date }) =>
-      forDay(date).map((t) => {
-        const readyAt = vnInstant(date, hhmm(t.readyTime));
-        return {
-          serviceDate: date,
-          readyAt,
-          ovenAt: new Date(readyAt.getTime() - t.ovenLeadMin * 60_000),
-          cutoffAt: vnInstant(date, hhmm(t.cutoffTime)),
-          capPan: t.capPan,
-          capBbq: t.capBbq,
-        };
-      }),
+    // Khung cà phê (M12) thêm cả cho ngày đã có từ trước (DB cũ chỉ có mẻ pizza) — ngày nào chưa có khung nào.
+    const withCafe = new Set(
+      (
+        await tx
+          .selectDistinct({ date: batches.serviceDate })
+          .from(batches)
+          .where(and(between(batches.serviceDate, dates[0], dates.at(-1)!), eq(batches.segment, "cafe")))
+      ).map((r) => r.date),
     );
-    if (rows.length > 0) await tx.insert(batches).values(rows).onConflictDoNothing();
-    return { days: created.length, batches: rows.length };
+
+    const rows = wanted.flatMap((date) =>
+      forDay(date)
+        .filter((t) => isNew.has(date) || (t.segment === "cafe" && !withCafe.has(date)))
+        .map((t) => {
+          const readyAt = vnInstant(date, hhmm(t.readyTime));
+          return {
+            serviceDate: date,
+            readyAt,
+            ovenAt: new Date(readyAt.getTime() - t.ovenLeadMin * 60_000),
+            cutoffAt: vnInstant(date, hhmm(t.cutoffTime)),
+            capPan: t.capPan,
+            capBbq: t.capBbq,
+            segment: t.segment,
+          };
+        }),
+    );
+    const inserted = rows.length > 0 ? await tx.insert(batches).values(rows).onConflictDoNothing().returning({ id: batches.id }) : [];
+    return { days: created.length, batches: inserted.length };
   });
 }
 
-/** Các ngày phục vụ trong [from, to] (gồm cả hai đầu), mẻ sắp theo giờ sẵn sàng. */
-export async function loadServiceDays(from: ISODate, to: ISODate, db: Executor = getDb()): Promise<ServiceDay[]> {
+/** Các ngày phục vụ trong [from, to] (gồm cả hai đầu), mẻ của `segment` sắp theo giờ sẵn sàng. */
+export async function loadServiceDays(from: ISODate, to: ISODate, db: Executor = getDb(), segment: Segment = "pizza"): Promise<ServiceDay[]> {
   const [dayRows, batchRows] = await Promise.all([
     db.select().from(serviceDays).where(between(serviceDays.date, from, to)).orderBy(asc(serviceDays.date)),
     db
       .select()
       .from(batches)
-      .where(between(batches.serviceDate, from, to))
+      .where(and(between(batches.serviceDate, from, to), eq(batches.segment, segment)))
       .orderBy(asc(batches.readyAt)),
   ]);
   return dayRows.map((d) => ({
@@ -79,11 +93,14 @@ export async function getOvenSnapshot(now: Date, db: Executor = getDb()): Promis
   await releaseExpiredHolds(now, db);
   const { ordering, shipping } = await loadSettings(db);
   const today = vnDateOf(now);
-  const days = await loadServiceDays(today, addDays(today, ordering.daysAhead), db);
+  const to = addDays(today, ordering.daysAhead);
+  const [days, cafeDays] = await Promise.all([loadServiceDays(today, to, db), loadServiceDays(today, addDays(today, 1), db, "cafe")]);
   return {
     serverNow: now.toISOString(),
     status: computeOvenStatus({ now, days, settings: ordering }),
     days: upcomingSlots({ now, days, settings: ordering }),
+    // Cà phê: hôm nay + ngày mai là đủ (đồ uống không đặt trước nhiều ngày).
+    cafe: upcomingSlots({ now, days: cafeDays, settings: ordering }),
     rules: {
       maxQtyPerLine: ordering.maxQtyPerLine,
       freeShipFrom: shipping.freeShipFrom,

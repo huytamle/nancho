@@ -386,11 +386,11 @@ describe("chấm điểm khẩu vị (§18.5)", () => {
     expect(await submitFeedbackCore(o.trackingToken, input({ "ribs-sv": 1 }), { now: NOW, db })).toEqual({ ok: false, reason: "invalid" });
 
     const first = await submitFeedbackCore(o.trackingToken, input({ "pepperoni-pan": 1 }, { "pepperoni-pan": ["ít dầu", "ngọt hơn"] }, " hơi mặn "), { now: NOW, db });
-    expect(first).toEqual({ ok: true, telegram: `⭐ #${o.seq} Pepperoni 😕 ít dầu — "hơi mặn"` });
+    expect(first).toEqual({ ok: true, voucher: expect.stringMatching(/^TH/), telegram: `⭐ #${o.seq} Pepperoni 😕 ít dầu — "hơi mặn"` });
     expect(await db.select().from(t.feedback)).toMatchObject([{ ratings: { "pepperoni-pan": 1 }, tags: { "pepperoni-pan": ["ít dầu"] }, comment: "hơi mặn" }]);
 
     const edit = await submitFeedbackCore(o.trackingToken, input({ "pepperoni-pan": 2 }), { now: plus(60 * 23), db });
-    expect(edit).toEqual({ ok: true, telegram: `⭐ #${o.seq} (sửa) Pepperoni 🙂` });
+    expect(edit).toEqual({ ok: true, voucher: expect.stringMatching(/^TH/), telegram: `⭐ #${o.seq} (sửa) Pepperoni 🙂` });
     expect(await db.$count(t.feedback)).toBe(1);
     expect((await getOrderView(o.trackingToken, plus(60 * 23), db))?.feedback).toMatchObject({ saved: { ratings: { "pepperoni-pan": 2 } }, editable: true });
     expect(await submitFeedbackCore(o.trackingToken, input({ "pepperoni-pan": 3 }), { now: plus(60 * 25), db })).toEqual({ ok: false, reason: "locked" });

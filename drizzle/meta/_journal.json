@@ -57,6 +57,13 @@
       "when": 1793449035017,
       "tag": "0007_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793458425892,
+      "tag": "0008_m12_members_cafe",
+      "breakpoints": true
     }
   ]
 }

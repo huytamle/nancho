@@ -49,7 +49,7 @@ export async function nextSaleDay(db: Executor, after: ISODate): Promise<ISODate
     .select({ d: t.batches.serviceDate })
     .from(t.batches)
     .innerJoin(t.serviceDays, eq(t.serviceDays.date, t.batches.serviceDate))
-    .where(and(gt(t.batches.serviceDate, after), ne(t.serviceDays.status, "closed")))
+    .where(and(gt(t.batches.serviceDate, after), eq(t.batches.segment, "pizza"), ne(t.serviceDays.status, "closed")))
     .orderBy(asc(t.batches.serviceDate))
     .limit(1);
   return r?.d ?? null;
@@ -60,7 +60,7 @@ async function isSaleDay(db: Executor, date: ISODate): Promise<boolean> {
     .select({ id: t.batches.id })
     .from(t.batches)
     .innerJoin(t.serviceDays, eq(t.serviceDays.date, t.batches.serviceDate))
-    .where(and(eq(t.batches.serviceDate, date), ne(t.serviceDays.status, "closed")))
+    .where(and(eq(t.batches.serviceDate, date), eq(t.batches.segment, "pizza"), ne(t.serviceDays.status, "closed")))
     .limit(1);
   return !!r;
 }

@@ -91,6 +91,8 @@ async function order(date: ISODate, batchId: number, seq: number, total: number,
 
 beforeAll(async () => {
   await seedStatic(db);
+  // Giá trị tồn kho = mọi dòng kho từ trước → bỏ dòng "Ra lò" mà file test khác để lại (thứ tự file không cố định).
+  await db.delete(t.stockMoves);
   await db.delete(t.staff);
   const mk = async (name: string, roles: Role[], tg?: number) => {
     const id = await upsertStaff({ name, roles, pin: "123456" }, db);

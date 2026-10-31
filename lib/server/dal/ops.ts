@@ -6,6 +6,7 @@ import type { ExpenseCategory, ExpenseSource } from "@/lib/domain/expense-comman
 import { canAssignRoles, hasRole, type Role } from "@/lib/domain/roles";
 import { addDays, vnDateOf, vnInstant, type ISODate } from "@/lib/domain/time";
 import { countAlertText, expenseSummaryText, shiftClosedText, type ExpenseSummary } from "@/lib/ops-text";
+import { hash } from "@node-rs/argon2";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { loadSettings } from "@/lib/server/dal/settings";
@@ -470,6 +471,71 @@ export async function setStaffRolesCore(targetId: number, roles: Role[], ctx: Ct
   return { ok: true };
 }
 
+// ── Nhân viên tự đăng ký qua Clerk (M12) ──
+
+/** Vai được xin: mọi vai trừ chủ quán. Vai quản lý chỉ chủ quán duyệt (canAssignRoles). */
+export const REQUESTABLE: Role[] = ["manager", "kitchen", "server", "barista", "shipper"];
+
+export type StaffRequestState = { status: "none" } | { status: "pending"; name: string; roles: Role[] } | { status: "linked" };
+
+export async function staffRequestState(clerkUserId: string, db: Executor = getDb()): Promise<StaffRequestState> {
+  const [s] = await db.select().from(t.staff).where(eq(t.staff.clerkUserId, clerkUserId)).limit(1);
+  if (!s) return { status: "none" };
+  return s.pending ? { status: "pending", name: s.name, roles: s.roles } : { status: "linked" };
+}
+
+/** Gửi yêu cầu vào nội bộ: tạo nhân viên `pending` với vai xin + PIN tự đặt (dùng cho máy chung & xác nhận bảng công). */
+export async function requestStaffAccessCore(
+  input: { clerkUserId: string; name: string; roles: Role[]; pin: string },
+  now: Date,
+  db: Db = getDb(),
+): Promise<{ ok: true } | Fail> {
+  const roles = [...new Set(input.roles)].filter((r) => REQUESTABLE.includes(r));
+  if (roles.length === 0) return fail("invalid");
+  const [existing] = await db.select({ id: t.staff.id }).from(t.staff).where(eq(t.staff.clerkUserId, input.clerkUserId)).limit(1);
+  if (existing) return fail("duplicate");
+  const [row] = await db
+    .insert(t.staff)
+    .values({ name: input.name.trim(), roles, pinHash: await hash(input.pin), clerkUserId: input.clerkUserId, pending: true })
+    .onConflictDoNothing()
+    .returning({ id: t.staff.id });
+  if (!row) return fail("duplicate"); // trùng tên
+  await db.insert(t.opsEvents).values({ type: "staff_requested", actor: "clerk:" + input.clerkUserId, data: { staffId: row.id, roles }, createdAt: now });
+  return { ok: true };
+}
+
+/** Duyệt/từ chối yêu cầu. Quản lý duyệt vai nghiệp vụ; vai quản lý cần chủ quán (cùng luật phân công §17.2). */
+export async function reviewStaffRequestCore(
+  input: { staffId: number; decision: "approve" | "reject"; roles: Role[] },
+  ctx: Ctx,
+): Promise<{ ok: true } | Fail> {
+  const db = ctx.db ?? getDb();
+  const [target] = await db.select().from(t.staff).where(and(eq(t.staff.id, input.staffId), eq(t.staff.pending, true))).limit(1);
+  if (!target) return fail("not_found");
+  if (input.decision === "reject") {
+    // Từ chối thì xoá hẳn (chưa có ca/công nào). Quản lý không từ chối được người xin vai quản lý.
+    if (!canAssignRoles(ctx.actor, { id: target.id, roles: [] }, target.roles)) return fail("forbidden");
+    await db.delete(t.staff).where(and(eq(t.staff.id, target.id), eq(t.staff.pending, true)));
+  } else {
+    const next = [...new Set(input.roles)];
+    if (!canAssignRoles(ctx.actor, { id: target.id, roles: [] }, next)) return fail("forbidden");
+    await db.update(t.staff).set({ roles: next, pending: false }).where(eq(t.staff.id, target.id));
+  }
+  await logEvent(db, input.decision === "approve" ? "staff_approved" : "staff_rejected", ctx.actor, { staffId: target.id, roles: input.roles }, ctx.now);
+  return { ok: true };
+}
+
+/** Gắn tài khoản Clerk vào nhân viên đang đăng nhập bằng PIN (chủ quán & nhân viên cũ chuyển sang Clerk). */
+export async function linkClerkCore(staffId: number, clerkUserId: string, db: Db = getDb()): Promise<{ ok: true } | Fail> {
+  return db.transaction(async (tx) => {
+    await tx.delete(t.staff).where(and(eq(t.staff.clerkUserId, clerkUserId), eq(t.staff.pending, true)));
+    const [taken] = await tx.select({ id: t.staff.id }).from(t.staff).where(eq(t.staff.clerkUserId, clerkUserId)).limit(1);
+    if (taken && taken.id !== staffId) return fail("duplicate");
+    await tx.update(t.staff).set({ clerkUserId }).where(eq(t.staff.id, staffId));
+    return { ok: true } as const;
+  });
+}
+
 export async function linkTelegramCore(staffId: number, telegramUserId: number, now: Date, db: Db = getDb()) {
   return db.transaction(async (tx) => {
     await tx.update(t.staff).set({ telegramUserId: null }).where(eq(t.staff.telegramUserId, telegramUserId));
@@ -544,7 +610,7 @@ export type ShiftView = {
   sapoPhoto: string | null;
 };
 
-export type StaffView = { id: number; name: string; roles: Role[]; telegram: boolean; isActive: boolean };
+export type StaffView = { id: number; name: string; roles: Role[]; telegram: boolean; isActive: boolean; pending: boolean; clerk: boolean };
 
 export type OpsView = {
   serverNow: string;
@@ -607,10 +673,12 @@ export async function loadOpsView(viewer: OpsActor, now: Date, db: Db = getDb())
         roles: s.roles,
         telegram: s.telegramUserId !== null,
         isActive: s.isActive,
+        pending: s.pending,
+        clerk: s.clerkUserId !== null,
       }))
     : [];
-  const me = (await db.select({ tg: t.staff.telegramUserId }).from(t.staff).where(eq(t.staff.id, viewer.id)))[0];
-  if (!isManager) staff.push({ id: viewer.id, name: viewer.name, roles: viewer.roles, telegram: me?.tg != null, isActive: true });
+  const me = (await db.select({ tg: t.staff.telegramUserId, clerk: t.staff.clerkUserId }).from(t.staff).where(eq(t.staff.id, viewer.id)))[0];
+  if (!isManager) staff.push({ id: viewer.id, name: viewer.name, roles: viewer.roles, telegram: me?.tg != null, isActive: true, pending: false, clerk: me?.clerk != null });
 
   return {
     serverNow: now.toISOString(),

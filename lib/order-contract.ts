@@ -2,6 +2,7 @@
 
 import type { CheckoutErrorKey } from "@/data/copy";
 import type { SlotView } from "@/lib/domain/oven-status";
+import type { PromoError } from "@/lib/domain/promo";
 import { normalizePhone } from "@/lib/domain/phone";
 import type { TransferInfo } from "@/lib/payments";
 
@@ -20,6 +21,8 @@ export type PlaceOrderInput = {
     | { type: "pickup"; pickupPointId: number };
   paymentMethod: "cod" | "transfer";
   note?: string;
+  /** Mã ưu đãi hoặc mã giới thiệu (M12). */
+  promoCode?: string;
   website?: string;
   startedAt: number;
 };
@@ -39,6 +42,9 @@ export type PlaceOrderResult =
       etaLabel: string;
       cutoffLabel: string;
       total: number;
+      discount: number;
+      /** Điểm sẽ cộng khi đơn hoàn tất (khách đăng nhập); null = khách vãng lai. */
+      points: number | null;
       status: "placed" | "confirmed";
       /** Đơn bắt buộc trả trước: giữ suất tới lúc này (ISO, §18.2); null = không có hạn. */
       holdUntil: string | null;
@@ -48,6 +54,7 @@ export type PlaceOrderResult =
   | { ok: false; reason: "slot_full" | "cutoff_passed"; alternatives: SlotView[] }
   | { ok: false; reason: "unavailable"; productIds: string[] }
   | { ok: false; reason: "prepay_required" }
+  | { ok: false; reason: "promo"; promo: PromoError; minSubtotal?: number }
   | { ok: false; reason: "rate_limited" | "paused" | "contact_us" | "server_error" };
 
 export const LIMITS = { nameMin: 2, nameMax: 40, addressMin: 8, addressMax: 200, noteMax: 300 } as const;
@@ -100,5 +107,10 @@ export type LookupResult =
       lng: number | null;
       requiresPrepay: boolean;
     };
+
+/** `checkPromo` (M12): xem trước mã ở bước chốt đơn — server tính lại khi đặt. */
+export type PromoPreview =
+  | { ok: true; amount: number; code: string }
+  | { ok: false; reason: PromoError | "rate_limited"; minSubtotal?: number };
 
 export type CancelResult = { ok: true } | { ok: false; reason: "too_late" | "not_found" | "rate_limited" };

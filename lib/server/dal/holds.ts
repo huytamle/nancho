@@ -34,6 +34,10 @@ export async function releaseExpiredHolds(now: Date, db: Executor = getDb()): Pr
        WHERE b.id = s.batch_id AND ${RELEASES}
       RETURNING b.id
     ),
+    vouchers_back AS (
+      UPDATE vouchers SET used_order_id = NULL WHERE used_order_id IN (SELECT id FROM expired)
+      RETURNING id
+    ),
     logged AS (
       INSERT INTO order_events (order_id, type, actor, data, created_at)
       SELECT id, 'cancelled', 'system', jsonb_build_object('from', 'placed', 'reason', 'hold_expired'), ${at}::timestamptz

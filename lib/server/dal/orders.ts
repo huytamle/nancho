@@ -9,8 +9,9 @@ import { pauseCancelOf } from "@/lib/domain/oven-lock";
 import { HOLD_EXPIRED_REASON, holdUntil as holdDeadline, isHeld, needsHold } from "@/lib/domain/hold";
 import { canTransition, customerStage, releasesCapacity, shouldAutoConfirm, type CustomerStage } from "@/lib/domain/order-status";
 import { priceOrder, requiresPrepay, type CartLine, type PricedItem } from "@/lib/domain/pricing";
+import { pointsFor } from "@/lib/domain/promo";
 import { vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
-import type { Channel, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/domain/types";
+import { isExtra, segmentOf, type Channel, type OrderStatus, type PaymentMethod, type PaymentStatus } from "@/lib/domain/types";
 import type { PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
 import type { TransferInfo } from "@/lib/payments";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
@@ -19,6 +20,7 @@ import type { Catalog } from "@/lib/server/dal/catalog";
 import { findCustomerByPhone, resolveSavedAddress } from "@/lib/server/dal/customers";
 import { releaseExpiredHolds } from "@/lib/server/dal/holds";
 import { getOvenSnapshot } from "@/lib/server/dal/schedule";
+import { consumeVoucher, releaseVouchers, resolvePromo, type Member } from "@/lib/server/dal/promo";
 import { loadSettings } from "@/lib/server/dal/settings";
 import { transferFor } from "@/lib/server/payments/vietqr";
 import { almostFullText, cancelledText, newOrderText } from "@/lib/server/notify/messages";
@@ -37,12 +39,21 @@ export type PlaceOrderOutcome = {
 /** Đơn do nhân viên nhập ("Thêm đơn nhanh", §10.4): đã nói chuyện với khách → xác nhận luôn, không Telegram. */
 export type StaffEntry = { actor: string; channel: Channel; overrideCutoff: boolean };
 
-export type PlaceOrderCtx = { now: Date; catalog: Catalog; db?: Db; staff?: StaffEntry; /** Kênh marketing từ cookie `th_src`. */ source?: string | null };
+export type PlaceOrderCtx = {
+  now: Date;
+  catalog: Catalog;
+  db?: Db;
+  staff?: StaffEntry;
+  /** Kênh marketing từ cookie `th_src`. */
+  source?: string | null;
+  /** Khách đăng nhập (M12): tích điểm, lịch sử, ví mã. */
+  member?: Pick<Member, "id"> | null;
+};
 
 const trackingToken = () => randomBytes(16).toString("base64url"); // 128 bit → 22 ký tự
 
 class Rejected extends Error {
-  constructor(readonly reason: "slot_full" | "cutoff_passed" | "paused") {
+  constructor(readonly reason: "slot_full" | "cutoff_passed" | "paused" | "promo_used") {
     super(reason);
   }
 }
@@ -54,11 +65,13 @@ function pgCode(err: unknown): string | undefined {
 
 /** DTO trả cho khách — dùng chung cho đơn vừa tạo và lần gửi lại cùng `idempotencyKey`. */
 function successOf(
-  o: Pick<t.Order, "code" | "seq" | "trackingToken" | "serviceDate" | "total" | "status" | "paymentMethod" | "fulfillment" | "holdUntil">,
-  b: Pick<t.BatchRow, "readyAt" | "cutoffAt">,
+  o: Pick<t.Order, "code" | "seq" | "trackingToken" | "serviceDate" | "total" | "discount" | "status" | "paymentMethod" | "fulfillment" | "holdUntil" | "memberId">,
+  b: Pick<t.BatchRow, "readyAt" | "cutoffAt" | "ovenAt" | "segment">,
   ctx: { now: Date; deliveryWindowMin: number; pointName: string | null },
 ): Success {
-  const readyLabel = vnTimeLabel(b.readyAt);
+  const cafe = b.segment === "cafe";
+  // Cà phê: khung giao ovenAt–readyAt (M12); pizza: giờ ra lò + cửa sổ giao.
+  const readyLabel = cafe ? `${vnTimeLabel(b.ovenAt)}–${vnTimeLabel(b.readyAt)}` : vnTimeLabel(b.readyAt);
   const etaEnd = vnTimeLabel(new Date(b.readyAt.getTime() + ctx.deliveryWindowMin * 60_000));
   return {
     ok: true,
@@ -67,9 +80,15 @@ function successOf(
     trackingPath: `/o/${o.trackingToken}`,
     readyLabel,
     dayLabel: vnDayLabel(o.serviceDate, vnDateOf(ctx.now)),
-    etaLabel: o.fulfillment === "delivery" ? `khoảng ${readyLabel}–${etaEnd}` : `${readyLabel} tại ${ctx.pointName ?? site.kitchen.name}`,
+    etaLabel: cafe
+      ? `trong khung ${readyLabel}`
+      : o.fulfillment === "delivery"
+        ? `khoảng ${readyLabel}–${etaEnd}`
+        : `${readyLabel} tại ${ctx.pointName ?? site.kitchen.name}`,
     cutoffLabel: vnTimeLabel(b.cutoffAt),
     total: o.total,
+    discount: o.discount,
+    points: o.memberId ? pointsFor(o.total) : null,
     status: o.status === "confirmed" ? "confirmed" : "placed",
     holdUntil: o.holdUntil?.toISOString() ?? null,
     payment:
@@ -142,13 +161,20 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
   if (f.type === "delivery" && !zone) return { result: { ok: false, reason: "invalid", fieldErrors: { zone: "zoneRequired" } } };
   if (f.type === "pickup" && !point) return { result: { ok: false, reason: "invalid", fieldErrors: {} } };
 
-  const priced = priceOrder({
-    lines,
-    fulfillment: zone
-      ? { type: "delivery", zone }
-      : { type: "pickup", point: point!, giftProduct: point!.giftProductId ? byId.get(point!.giftProductId) : undefined },
-    shipping,
-  });
+  const fulfillmentInput = zone
+    ? ({ type: "delivery", zone } as const)
+    : ({ type: "pickup", point: point!, giftProduct: point!.giftProductId ? byId.get(point!.giftProductId) : undefined } as const);
+  let priced = priceOrder({ lines, fulfillment: fulfillmentInput, shipping });
+
+  // Mã ưu đãi / giới thiệu (M12): kiểm tra trên tạm tính rồi tính lại với số giảm. Nhân viên nhập đơn không dùng mã.
+  let promo: { voucherId: number | null; referrerId: string | null } = { voucherId: null, referrerId: null };
+  if (priced.ok && input.promoCode && !ctx.staff) {
+    const r = await resolvePromo(input.promoCode, { phone, member: ctx.member ?? null, subtotal: priced.subtotal, now }, db);
+    if (!r.ok) return { result: { ok: false, reason: "promo", promo: r.reason, ...(r.minSubtotal ? { minSubtotal: r.minSubtotal } : {}) } };
+    promo = { voucherId: r.voucherId, referrerId: r.referrerId };
+    priced = priceOrder({ lines, fulfillment: fulfillmentInput, shipping, discount: r.amount });
+  }
+  const segment = segmentOf(lines.find((l) => !isExtra(l.product.kind))?.product.kind ?? "pizza");
   if (!priced.ok) {
     return {
       result:
@@ -191,6 +217,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
         .where(
           and(
             eq(t.batches.id, input.batchId),
+            eq(t.batches.segment, segment), // cà phê chỉ vào khung cà phê, pizza chỉ vào mẻ lò
             // Owner "vượt giờ chốt": nhận cả mẻ đã chốt nhưng chưa vào lò; sức chứa vẫn giữ nguyên.
             staff?.overrideCutoff ? inArray(t.batches.status, ["open", "closed"]) : eq(t.batches.status, "open"),
             staff?.overrideCutoff ? undefined : gt(t.batches.cutoffAt, now),
@@ -255,9 +282,12 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
           trackingToken: trackingToken(),
           idempotencyKey: input.idempotencyKey,
           holdUntil: hold ? holdDeadline(now, payment.holdMinutes) : null,
+          memberId: ctx.member?.id ?? null,
+          referrerId: promo.referrerId,
           createdAt: now,
         })
         .returning();
+      if (promo.voucherId !== null && !(await consumeVoucher(tx, promo.voucherId, order.id))) throw new Rejected("promo_used");
 
       await insertItems(tx, order.id, priced.items);
       await tx.insert(t.orderEvents).values([
@@ -320,6 +350,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
   } catch (err) {
     if (err instanceof Rejected) {
       if (err.reason === "paused") return { result: { ok: false, reason: "paused" } };
+      if (err.reason === "promo_used") return { result: { ok: false, reason: "promo", promo: "used" } };
       return { result: { ok: false, reason: err.reason, alternatives: await alternativesFor(input.batchId, req, now, db) } };
     }
     // Hai lần gửi cùng idempotencyKey chạy song song: lần thua trả lại đơn của lần thắng.
@@ -414,6 +445,7 @@ export async function cancelOrderByTokenCore(token: string, ctx: { now: Date; re
         .set({ usedPan: sql`${t.batches.usedPan} - ${order.panUnits}`, usedBbq: sql`${t.batches.usedBbq} - ${order.bbqUnits}` })
         .where(eq(t.batches.id, batch.id));
     }
+    await releaseVouchers(tx, [order.id]);
     await tx.insert(t.orderEvents).values({
       orderId: order.id,
       type: "cancelled",
@@ -443,6 +475,8 @@ export type OrderView = {
   status: OrderStatus;
   stage: CustomerStage;
   fulfillment: "delivery" | "pickup";
+  /** M12: `cafe` = đơn cà phê giao theo khung. */
+  segment: "pizza" | "cafe";
   serviceDate: ISODate;
   dayLabel: string;
   readyLabel: string;
@@ -499,6 +533,7 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
   ]);
   const feedback = canRate(o.status, o.serviceDate, vnDateOf(now)) ? await feedbackView(items, saved ?? null, now, db) : null;
 
+  const cafe = b.segment === "cafe";
   const readyLabel = vnTimeLabel(b.readyAt);
   const etaEnd = vnTimeLabel(new Date(b.readyAt.getTime() + ordering.deliveryWindowMin * 60_000));
   const sold = items.filter((i) => !i.isGift);
@@ -512,7 +547,8 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
     dayLabel: vnDayLabel(o.serviceDate, vnDateOf(now)),
     readyLabel,
     ovenLabel: vnTimeLabel(b.ovenAt),
-    etaLabel: o.fulfillment === "delivery" ? `${readyLabel}–${etaEnd}` : readyLabel,
+    etaLabel: cafe ? `${vnTimeLabel(b.ovenAt)}–${readyLabel}` : o.fulfillment === "delivery" ? `${readyLabel}–${etaEnd}` : readyLabel,
+    segment: b.segment,
     cutoffLabel: vnTimeLabel(b.cutoffAt),
     canCancel: canTransition(o.status, "cancelled", { actor: { type: "customer" }, fulfillment: o.fulfillment, now, cutoffAt: b.cutoffAt }).ok,
     customerName: o.customerName,

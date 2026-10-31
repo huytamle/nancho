@@ -1,11 +1,19 @@
 // Kiểu dữ liệu domain dùng chung (BLUEPRINT §6, §7). Thuần — không import DB/Next/React.
 // Tiền luôn là số nguyên VND. Thời điểm là Date (UTC), ngày phục vụ là ISODate theo giờ VN.
 
+import type { Segment } from "@/lib/domain/metrics";
 import type { ISODate } from "@/lib/domain/time";
 
-export type { ISODate };
+export type { ISODate, Segment };
 
-export type Kind = "pizza" | "bbq" | "combo" | "addon";
+/** `addon` = sốt chấm, `drink` = nước lon giá kèm (M12) — cả hai chỉ bán kèm pizza/BBQ. `cafe` = cà phê ship (M12). */
+export type Kind = "pizza" | "bbq" | "combo" | "addon" | "drink" | "cafe";
+
+/** Món chỉ bán kèm (không đứng một mình trong đơn). */
+export const isExtra = (k: Kind) => k === "addon" || k === "drink";
+
+/** Mảng của món: cà phê ship theo khung giờ trong ngày; còn lại đi theo mẻ lò T6–CN. */
+export const segmentOf = (k: Kind): Segment => (k === "cafe" ? "cafe" : "pizza");
 
 export type ComboGroup = { key: string; label: string; options: string[] };
 
@@ -15,6 +23,8 @@ export type Product = {
   name: string;
   short: string;
   price: number;
+  /** Giá lẻ để gạch ngang (nước lon bán kèm); null = không có. */
+  listPrice: number | null;
   image: string;
   badge: string | null;
   usesPan: number;
@@ -72,6 +82,8 @@ export type Batch = {
   usedPan: number;
   usedBbq: number;
   status: BatchStatus;
+  /** `cafe`: ovenAt = đầu khung giao, readyAt = cuối khung. */
+  segment: Segment;
 };
 
 export type ServiceDay = {

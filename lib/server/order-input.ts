@@ -40,6 +40,7 @@ export const OrderInput = z.object({
   ]),
   paymentMethod: z.enum(["cod", "transfer"]),
   note: z.string().trim().max(LIMITS.noteMax, msg("noteLong")).optional(),
+  promoCode: z.string().trim().max(24).optional(),
   website: z.string().max(0).optional(),
   startedAt: z.number().int(),
 }) satisfies z.ZodType<PlaceOrderInput>;

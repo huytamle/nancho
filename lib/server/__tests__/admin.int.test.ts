@@ -218,7 +218,8 @@ describe("dashboard & cron", () => {
   it("loadKitchenDay trả DTO gọn kèm Bảng Tổng Hợp", async () => {
     await place("17:00", { lines: [{ productId: "pepperoni-pan", qty: 2, addons: [{ productId: "sauce-garlic-butter", qty: 1 }] }] });
     const day = await loadKitchenDay(SAT, NOW, db);
-    expect(day.batches).toHaveLength(3);
+    expect(day.batches.filter((b) => b.segment === "pizza")).toHaveLength(3);
+    expect(day.batches.filter((b) => b.segment === "cafe").map((b) => b.readyLabel)).toEqual(["☕ 08:00–10:30", "☕ 13:30–15:30"]);
     expect(day.orders[0]).toMatchObject({ seq: 1, collect: day.orders[0].total, zoneName: "Khu phố 2", routeId: 1 });
     expect(day.orders[0].items).toEqual([
       { name: "Pan Pizza Pepperoni", qty: 2, isGift: false, choices: null, addons: [{ name: "Hũ Sốt Bơ Tỏi chấm viền bánh", qty: 1 }] },

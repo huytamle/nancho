@@ -32,7 +32,7 @@ export function ratableItems(
   const out = new Map<string, RatableItem>();
   const add = (id: string) => {
     const p = products.get(id);
-    if (p && p.kind !== "addon" && p.kind !== "combo" && !out.has(id)) out.set(id, { productId: id, name: p.name, kind: p.kind });
+    if (p && p.kind !== "addon" && p.kind !== "drink" && p.kind !== "combo" && !out.has(id)) out.set(id, { productId: id, name: p.name, kind: p.kind });
   };
   for (const i of items) {
     if (i.isGift || i.parentId !== null) continue;

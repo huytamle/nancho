@@ -6,6 +6,7 @@ import * as z from "zod";
 import { normalizePhone } from "@/lib/domain/phone";
 import { cleanSource, SRC_COOKIE } from "@/lib/source";
 import type { CancelResult, PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
+import { currentMember } from "@/lib/server/auth/clerk";
 import { serverNow } from "@/lib/server/clock";
 import { CUSTOMER_COOKIE, rememberCookieOptions, signRemember } from "@/lib/server/customer-cookie";
 import { getCatalog } from "@/lib/server/dal/catalog";
@@ -46,7 +47,8 @@ export async function placeOrder(raw: PlaceOrderInput): Promise<PlaceOrderResult
 
     const jar = await cookies();
     const source = cleanSource(jar.get(SRC_COOKIE)?.value);
-    const { result, created } = await placeOrderCore(input, phone, { now, catalog: await getCatalog(), source });
+    const member = await currentMember();
+    const { result, created } = await placeOrderCore(input, phone, { now, catalog: await getCatalog(), source, member });
     if (!created || !result.ok) return result;
 
     if (input.customer.remember) jar.set(CUSTOMER_COOKIE, signRemember(created.customerId, now), rememberCookieOptions);

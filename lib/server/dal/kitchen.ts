@@ -11,6 +11,7 @@ import type {
   DayStatus,
   Fulfillment,
   Kind,
+  Segment,
   OrderStatus,
   OrderWithItems,
   PaymentMethod,
@@ -78,6 +79,8 @@ export type KitchenBatch = {
   usedPan: number;
   usedBbq: number;
   status: BatchStatus;
+  /** `cafe` = khung giao cà phê (M12) — không hiện ở tab Mẻ nướng/Chuẩn bị; vẫn có ở Đơn & Giao (chung shipper). */
+  segment: Segment;
 };
 
 export type KitchenProduct = {
@@ -202,7 +205,7 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
         collect: o.paymentStatus === "unpaid" ? o.total : 0,
         fulfillment: o.fulfillment,
         // Add-on theo loại món (gồm cả quà), không theo parent_item_id — đơn nhập tay/cũ có thể không gắn món cha.
-        addons: own.filter((i) => kindOf.get(i.productId) === "addon").map((i) => ({ name: i.name, qty: i.qty })),
+        addons: own.filter((i) => kindOf.get(i.productId) === "addon" || kindOf.get(i.productId) === "drink").map((i) => ({ name: i.name, qty: i.qty })),
         units: o.panUnits + o.bbqUnits,
       }),
       holdUntil: isHeld(o) ? o.holdUntil!.toISOString() : null,
@@ -250,13 +253,14 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
       readyAt: b.readyAt.toISOString(),
       ovenAt: b.ovenAt.toISOString(),
       cutoffAt: b.cutoffAt.toISOString(),
-      readyLabel: vnTimeLabel(b.readyAt),
+      readyLabel: b.segment === "cafe" ? `☕ ${vnTimeLabel(b.ovenAt)}–${vnTimeLabel(b.readyAt)}` : vnTimeLabel(b.readyAt),
       ovenLabel: vnTimeLabel(b.ovenAt),
       capPan: b.capPan,
       capBbq: b.capBbq,
       usedPan: b.usedPan,
       usedBbq: b.usedBbq,
       status: b.status,
+      segment: b.segment,
     })),
     orders,
     prep: buildPrepReport({
@@ -362,7 +366,7 @@ export async function runDaily(now: Date, send: (text: string) => Promise<boolea
   const [{ last } = { last: null }] = await db
     .select({ last: sql<string | null>`max(${t.batches.cutoffAt})` })
     .from(t.batches)
-    .where(eq(t.batches.serviceDate, today));
+    .where(and(eq(t.batches.serviceDate, today), eq(t.batches.segment, "pizza")));
   if (last && now >= new Date(last)) {
     const [claimed] = await db
       .update(t.serviceDays)

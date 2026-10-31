@@ -20,11 +20,12 @@ export function BatchBoard() {
   // Thẻ nắp hộp (§18.3): mặc định hiện cho mẻ đang trong lò / đã ra lò (đang đóng gói); mẻ khác bấm để xem.
   const [boxes, setBoxes] = useState<Record<number, boolean>>({});
 
-  if (day.batches.length === 0) return <p className="py-10 text-center text-secondary">{copy.admin.noDay}</p>;
+  const batches = day.batches.filter((b) => b.segment === "pizza"); // khung cà phê không vào lò
+  if (batches.length === 0) return <p className="py-10 text-center text-secondary">{copy.admin.noDay}</p>;
 
   return (
     <div className="space-y-5">
-      {day.batches.map((b) => {
+      {batches.map((b) => {
         const orders = day.orders.filter((o) => o.batchId === b.id && o.status !== "cancelled");
         const prep = day.prep.batches.find((p) => p.batchId === b.id);
         const confirmed = orders.filter((o) => o.status === "confirmed").length;

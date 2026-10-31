@@ -46,10 +46,12 @@ export function PrepBoard() {
   const pulled = new Set(pulledRaw.split(",").filter(Boolean));
   const { pending, run } = useAdminAction();
 
-  const lastCutoff = day.batches.reduce((m, b) => (b.cutoffAt > m ? b.cutoffAt : m), "");
+  // ponytail: Bảng chuẩn bị vẫn đếm cả đơn cà phê (prep dùng chung cho tab Giao); món cà phê không có định lượng nên không lệch nguyên liệu.
+  const ovenBatches = day.batches.filter((b) => b.segment === "pizza");
+  const lastCutoff = ovenBatches.reduce((m, b) => (b.cutoffAt > m ? b.cutoffAt : m), "");
   const cutoffLabel = lastCutoff ? vnTimeLabel(new Date(lastCutoff)) : null;
 
-  if (day.batches.length === 0) return <p className="py-10 text-center text-secondary">{copy.admin.noDay}</p>;
+  if (ovenBatches.length === 0) return <p className="py-10 text-center text-secondary">{copy.admin.noDay}</p>;
 
   return (
     <div className="space-y-5">
