@@ -23,9 +23,9 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
 | **M2 — DB & DAL** | ✅ | `bf92fda` |
 | **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
-| **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | `c03560b` |
-| **M5 — Kitchen Dashboard** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
-| **M6 — Thanh toán, SEO, PWA** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
+| **M4 — Đặt đơn thật** | ✅ trên `main` | `c03560b` |
+| **M5 — Kitchen Dashboard** | ✅ trên `main` | xem `git log` |
+| **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
