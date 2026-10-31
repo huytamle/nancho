@@ -7,3 +7,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# THE HEAT PIZZA — project blueprint
+
+Before building any feature, read `docs/BLUEPRINT.md` (architecture, specs, data model, milestones M0–M6) and follow its rules in §0. Marketing context lives in `docs/MARKETING.md`.

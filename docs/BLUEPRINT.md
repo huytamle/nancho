@@ -1,0 +1,1326 @@
+# THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
+
+> **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
+> **Phiên bản:** 1.0 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó.
+> **Ngôn ngữ:** Văn bản tiếng Việt, tên code/biến/bảng bằng tiếng Anh.
+> **Tài liệu kèm theo:** [`docs/MARKETING.md`](./MARKETING.md) — chiến lược marketing đa kênh tại thị trấn.
+
+---
+
+## Mục lục
+
+0. [Dành cho AI Agent — đọc trước khi code](#0-dành-cho-ai-agent--đọc-trước-khi-code)
+1. [Tóm tắt điều hành](#1-tóm-tắt-điều-hành)
+2. [Đánh giá codebase hiện tại](#2-đánh-giá-codebase-hiện-tại)
+3. [Mô hình vận hành "Đặt trước mới làm" & khái niệm domain](#3-mô-hình-vận-hành-đặt-trước-mới-làm--khái-niệm-domain)
+4. [Những nâng cấp so với brief gốc (và lý do)](#4-những-nâng-cấp-so-với-brief-gốc-và-lý-do)
+5. [Kiến trúc kỹ thuật](#5-kiến-trúc-kỹ-thuật)
+6. [Mô hình dữ liệu](#6-mô-hình-dữ-liệu)
+7. [Logic nghiệp vụ lõi (thuần, test được)](#7-logic-nghiệp-vụ-lõi-thuần-test-được)
+8. [Hợp đồng API (Server Actions & Route Handlers)](#8-hợp-đồng-api-server-actions--route-handlers)
+9. [Đặc tả UI/UX — Trang đặt món](#9-đặc-tả-uiux--trang-đặt-món)
+10. [Khu vực 4 — Kitchen Dashboard `/admin/kitchen`](#10-khu-vực-4--kitchen-dashboard-adminkitchen)
+11. [Thanh toán & thông báo](#11-thanh-toán--thông-báo)
+12. [Bảo mật, quyền riêng tư & pháp lý](#12-bảo-mật-quyền-riêng-tư--pháp-lý)
+13. [Hiệu năng, SEO, PWA, giám sát](#13-hiệu-năng-seo-pwa-giám-sát)
+14. [Chiến lược kiểm thử](#14-chiến-lược-kiểm-thử)
+15. [Lộ trình triển khai (Milestones cho Agent)](#15-lộ-trình-triển-khai-milestones-cho-agent)
+16. [Quyết định cần chủ quán chốt (kèm mặc định)](#16-quyết-định-cần-chủ-quán-chốt-kèm-mặc-định)
+- [Phụ lục A — Seed data mẫu](#phụ-lục-a--seed-data-mẫu)
+- [Phụ lục B — Bộ dữ liệu kiểm thử Prep (khớp ví dụ trong brief)](#phụ-lục-b--bộ-dữ-liệu-kiểm-thử-prep-khớp-ví-dụ-trong-brief)
+
+---
+
+## 0. Dành cho AI Agent — đọc trước khi code
+
+**Thứ tự đọc:** §1 → §3 → §5 → milestone đang làm ở §15 → các mục mà milestone đó tham chiếu.
+
+**Luật bất di bất dịch**
+
+1. **Đây là Next.js 16.3, không phải Next.js trong trí nhớ của bạn.** Trước khi dùng một API, đọc tài liệu tương ứng trong `node_modules/next/dist/docs/` (xem `AGENTS.md`). Những thay đổi chắc chắn sẽ gặp:
+   - `proxy.ts` thay cho `middleware.ts` (hàm export tên `proxy`, chỉ chạy runtime Node).
+   - `cacheComponents: true` → dữ liệu **mặc định là động**; muốn cache thì `'use cache'` + `cacheLife()` + `cacheTag()`. Đọc dữ liệu động/`cookies()`/`connection()` phải nằm trong `<Suspense>`.
+   - Sau mutation: `updateTag(tag)` (đọc-lại-ngay, chỉ trong Server Action), `revalidateTag(tag, 'max')` (bắt buộc 2 tham số), `refresh()`.
+   - `params`, `searchParams`, `cookies()`, `headers()` đều **async**.
+   - `<Image preload />` thay cho `priority` (đã deprecated). `images.qualities` mặc định chỉ `[75]`.
+   - `next lint` đã bị bỏ → dùng `npx eslint .`. Kiểu `LayoutProps`/`PageProps` được sinh bởi `npx next typegen`.
+2. **Thời gian luôn theo giờ Việt Nam** qua `lib/domain/time.ts` (UTC+7, VN không có DST). **Cấm** `Date#getHours()`/`getDate()` ở server và cấm `new Date("YYYY-MM-DDTHH:mm")` không có offset.
+3. **Server là nguồn sự thật** cho giá, phí ship, quà tặng, suất lò, trạng thái đơn. Client chỉ hiển thị và gửi *ý định* (id món, số lượng, mẻ).
+4. **Logic nghiệp vụ thuần** (`lib/domain/*`) không import DB, Next, React → unit test 100%.
+5. **Mọi Server Action** theo thứ tự: parse bằng zod → xác thực (nếu admin) → rate-limit (nếu public) → gọi DAL → trả về DTO tối giản (không trả record DB thô).
+6. **Tiền là số nguyên VND** (`integer`). Không dùng float.
+7. **Không thêm trang/route ngoài danh sách ở §5.4.** Sản phẩm là *ứng dụng đặt món một trang*, không phải website nhiều trang.
+8. **Mobile-first thật sự:** dựng & kiểm tra ở viewport 390×844 trước, sau đó mới desktop.
+9. Không thêm thư viện ngoài danh sách §5.2 nếu không ghi lý do vào PR.
+
+**Definition of Done cho mỗi ticket**
+
+- `npx eslint .` 0 lỗi · `npx next typegen && npx tsc --noEmit` sạch · unit test pass · e2e liên quan pass.
+- Không vượt ngân sách hiệu năng (§13.1).
+- Nếu thay đổi hợp đồng (schema, API, trạng thái), cập nhật tài liệu này trong cùng PR.
+
+---
+
+## 1. Tóm tắt điều hành
+
+`theheatpizza.vn` là **ứng dụng đặt món đơn trang, mobile-first, giao diện tối**, phục vụ mô hình **Hybrid Cloud Kitchen "đặt trước mới làm"**: khách chọn món + chọn mẻ nướng trước giờ chốt sổ; bếp nhìn **Bảng Tổng Hợp Chuẩn Bị** để lấy nguyên liệu theo con số tổng và nướng theo từng mẻ.
+
+**12 quyết định then chốt**
+
+| # | Quyết định | Vì sao |
+|---|---|---|
+| 1 | **Pivot hoàn toàn** codebase "THE HEAT" (nhà hàng ăn tại chỗ) sang app đặt món; giữ lại design token, font, logo, ảnh món còn dùng được | Khung kỹ thuật tốt (Next 16, Tailwind 4, TS strict), nhưng sản phẩm cũ là website nhiều section, không có DB, đơn hàng bị **mất** (chỉ `console.info`) |
+| 2 | **Chỉ tiếng Việt, chỉ giao diện tối** | Bỏ `LanguageProvider` (đang ép mọi component thành Client Component) → dùng được Server Components, JS nhẹ hơn cho máy Android tầm trung trên 4G |
+| 3 | **Mẻ nướng (Batch)** là thực thể trung tâm; "suất" đo theo **tài nguyên** (khay pan, phần BBQ), không đo theo số đơn | 1 Combo chiếm 1 khay pizza + 1 phần BBQ; đếm theo đơn sẽ overbook lò |
+| 4 | **Khung giờ là thuộc tính của đơn**, không phải của từng món; chọn ngay trên Oven Bar | Một đơn nhiều món chỉ có một giờ nhận; tránh mâu thuẫn dữ liệu |
+| 5 | **Giỏ hàng + thanh "Xem đơn" nổi** + **Checkout một màn hình** trong bottom sheet | Giữ trải nghiệm "1 bước" của brief nhưng vẫn cho đặt nhiều món |
+| 6 | **Nhận diện khách cũ an toàn**: tự điền đầy đủ chỉ trên thiết bị đã "ghi nhớ"; tra SĐT từ thiết bị lạ chỉ trả **tên gọi + khu vực**, địa chỉ chi tiết được che và tham chiếu phía server | Tra SĐT → trả tên & địa chỉ đầy đủ = lộ dữ liệu cá nhân của bất kỳ ai (vi phạm NĐ 13/2023 & Luật BVDLCN) |
+| 7 | **Giữ suất nguyên tử** bằng một câu `UPDATE … WHERE used + n <= cap` trong transaction | Hai khách bấm cùng lúc vào "Còn 1 suất" → chỉ một người thắng |
+| 8 | **BOM (định lượng)** cho mỗi món → Prep Calculator ra cả gram phô mai, số hũ sốt, số hộp, phần gừng | Bếp lấy nguyên liệu theo con số tổng, không phải tự nhẩm |
+| 9 | **Thanh toán:** Tiền mặt + Chuyển khoản **VietQR** (tự xác nhận qua webhook SePay ở M6); **trả trước theo rủi ro** (khách từng bom hàng mới bị yêu cầu) | Giảm bom hàng mà không làm khó khách quen |
+| 10 | **Thông báo bếp qua Telegram Bot** (miễn phí, tức thì); Zalo ZNS cho khách ở giai đoạn 2 | Rẻ, nhanh, không phụ thuộc OA được duyệt |
+| 11 | **Stack ít nhà cung cấp:** Next 16 + Postgres (Drizzle) + Telegram; rate-limit bằng chính Postgres; triển khai được trên Vercel *hoặc* 1 VPS | Doanh nghiệp nhỏ: càng ít dịch vụ càng ít điểm hỏng & chi phí |
+| 12 | **Đo lường marketing tích hợp**: mọi QR/link mang `?src=…`, lưu vào đơn; link chia sẻ từng món `/m/[slug]` có ảnh OG riêng | Biết kênh nào ra đơn thật (xem `MARKETING.md`) |
+
+---
+
+## 2. Đánh giá codebase hiện tại
+
+### 2.1 Hiện trạng (commit `71dc123`)
+
+- **Framework:** Next.js 16.3.5 (App Router, Turbopack), React 19.2.8, Tailwind CSS 4, TypeScript strict, ESLint 9 flat config. Alias `@/*` trỏ về gốc repo.
+- **Sản phẩm:** website một trang cho nhà hàng **THE HEAT** (162 Nguyễn Thuật, xã Thăng Bình, TP Đà Nẵng): Header → Hero (logo + carousel) → Menu 6 nhóm/22 món (café, pizza Detroit, BBQ, fries, sốt, KOLD Gelato) → Delivery (giỏ hàng + form) → Gallery → Visit (bản đồ) → Reservation (đặt bàn) → Footer.
+- **Dữ liệu:** tĩnh trong `data/*.ts`; song ngữ vi/en trong `data/i18n.ts` (490 dòng) qua React Context + `localStorage`.
+- **Server Actions:** `app/actions/delivery.ts`, `app/actions/reservation.ts` — validate tốt, **tính giá lại phía server** (điểm cộng), nhưng **không lưu ở đâu cả** (`console.info`).
+- **Design system:** CSS variables kiểu Apple (`--bg #000`, `--surface #1d1d1f`, `--elevated #2c2c2e`, `--text #f5f5f7`, `--secondary #a1a1a6`, `--accent #ff3d00`), font Be Vietnam Pro (có subset tiếng Việt), bo góc 28px, easing `cubic-bezier(0.22,1,0.36,1)`.
+- **Chưa có:** DB, auth, test, CI, `proxy.ts`, cấu hình `next.config.ts` (rỗng).
+
+### 2.2 Giữ / Bỏ / Viết lại
+
+| Hạng mục | Quyết định | Ghi chú |
+|---|---|---|
+| Next 16 + Tailwind 4 + TS strict + ESLint flat | **Giữ** | Bật thêm `cacheComponents`, `reactCompiler` |
+| Token màu trong `app/globals.css`, font Be Vietnam Pro, easing | **Giữ & mở rộng** | Bỏ nhánh `html.light`; thêm token trạng thái (§9.1) |
+| `lib/format.ts` (`formatPrice`) | **Giữ**, bỏ tham số `lang` | |
+| Regex & chuẩn hoá SĐT trong 2 action | **Gộp** vào `lib/domain/phone.ts` | Hiện bị lặp code ở 2 file |
+| Mẫu "server tính lại giá" trong `delivery.ts` | **Giữ tư duy**, viết lại thành `placeOrder` | |
+| `useActionState` + thông điệp lỗi theo key | **Giữ tư duy** | |
+| `components/json-ld.tsx`, `app/icon.tsx`, `app/opengraph-image.*` | **Viết lại** nội dung cho THE HEAT PIZZA | |
+| Logo (`public/images/brand/logo-*.jpg`) | **Giữ** | Cần bản SVG/PNG nền trong suốt (§16) |
+| Ảnh món: `menu/bbq-ribs.jpg`, `menu/pan-bbq.jpg`, `pizza/…carrousel03.jpg` (pepperoni), `menu/sauce-*.jpg`, `menu/cold-brew.jpg` | **Giữ** làm ảnh tạm | Cần chụp mới cho Pizza Phô mai Bơ tỏi, BBQ #2, Combo |
+| Café, Gelato/KOLD, Fries, Gallery, Visit/Map, Reservation, Hero carousel | **Bỏ** | Ngoài phạm vi app đặt món |
+| `LanguageProvider`, `LanguageToggle`, `ThemeToggle`, script `themeInit` | **Bỏ** | Chuỗi UI chuyển vào `data/copy.ts` (chỉ `vi`, cấu trúc sẵn cho i18n sau này) |
+| `Header` với nav anchor | **Thay** bằng Oven Bar | |
+
+### 2.3 Lỗi & nợ kỹ thuật phát hiện
+
+| Mức | Vấn đề | Vị trí | Bài học cho bản mới |
+|---|---|---|---|
+| 🔴 | Đơn giao hàng và đặt bàn **không được lưu** — chỉ `console.info` | `app/actions/*.ts` | Phải có DB + thông báo bếp + màn hình theo dõi đơn |
+| 🔴 | **Lỗi múi giờ:** `new Date("2026-11-06T18:00")` được parse theo giờ *server* (Vercel = UTC) rồi kiểm tra `getHours()` → kiểm tra "giờ mở cửa" và "thời điểm tương lai" lệch 7 tiếng | `app/actions/reservation.ts` | §7.1: mọi tính toán qua `lib/domain/time.ts` với offset `+07:00` |
+| 🟠 | 4 lỗi ESLint `react-hooks/set-state-in-effect` | `delivery.tsx:26`, `language-provider.tsx:28`, `reservation-form.tsx:25`, `theme-toggle.tsx:33` | Dùng `useSyncExternalStore` cho dữ liệu từ `localStorage`; reset state theo `key` thay vì effect |
+| 🟠 | Toàn bộ UI là Client Component vì `useLanguage()` | `components/*` | Bỏ i18n runtime → Server Components mặc định |
+| 🟡 | `priority` trên `<Image>` đã deprecated ở Next 16 | `logo.tsx`, `hero.tsx`, `hero-gallery.tsx` | Dùng `preload` / `fetchPriority="high"` |
+| 🟡 | ~6 MB ảnh không dùng (`Logo-The-Heat.png` 1,4 MB, `kold-gelato*.png` 3,1 MB, `pizza.jpg`, `chicken.jpg`, `coffee.jpg`, `hero.jpg`, 4 ảnh `menu/pizza-*.jpg` trùng `menu/pan-*.jpg`, các SVG mẫu của create-next-app) | `public/` | Xoá ở M0 |
+| 🟡 | `metadataBase` = `theheat.vn`; `package.json` name = `nanchos` | `app/layout.tsx`, `package.json` | Đổi sang `theheatpizza.vn`, `theheat-pizza` |
+| 🟡 | Phí ship cố định 20.000đ | `data/delivery.ts` | Phí theo khu vực (10–15k) từ DB |
+| ⚪ | `tsc` báo thiếu `LayoutProps` khi chưa chạy `next typegen` | CI | Chạy `npx next typegen` trước `tsc` |
+
+---
+
+## 3. Mô hình vận hành "Đặt trước mới làm" & khái niệm domain
+
+### 3.1 Dòng thời gian của một ngày phục vụ (ví dụ mặc định)
+
+```
+08:00 ──────── 15:30 ───── 15:45 ─────── 16:40 ── 17:00 ── 17:40 ── 18:00 ── 18:40 ── 19:00 ──── 21:00
+  │  Nhận đặt trước  │ CHỐT SỔ │ Lấy NL theo  │ Mẻ 1    │ Giao/    │ Mẻ 2    │ Giao/    │ Mẻ 3    │ Giao/
+  │  (cả ngày & các  │ (cutoff)│ Bảng Tổng Hợp│ đút lò  │ nhận 1   │ đút lò  │ nhận 2   │ đút lò  │ nhận 3
+  │  ngày tới)       │         │              │         │          │         │          │         │
+```
+
+- Đế pan pizza cần ủ trước trong khay nhiều giờ, túi BBQ sous-vide đã nấu sẵn → **giờ chốt sổ quyết định số đế cần chuẩn bị**. Sau giờ chốt, mặc định không nhận đơn cho tối đó (giai đoạn 2 có "suất muộn" từ đế dự phòng — §4, mục 14).
+- Khách có thể đặt **trước cho các ngày tới** (mặc định 3 ngày) — mỗi ngày có giờ chốt riêng.
+
+### 3.2 Từ điển khái niệm (dùng thống nhất trong code, UI và tài liệu)
+
+| Thuật ngữ (UI) | Tên trong code | Định nghĩa |
+|---|---|---|
+| Ngày phục vụ | `ServiceDay` / `service_date` | Một ngày bếp hoạt động (theo giờ VN). Trạng thái: `open` · `closed` (ngày nghỉ) · `paused` (tạm ngưng: mưa bão, mất điện…) |
+| Mẻ nướng / Khung giờ | `Batch` | Một lượt nướng gắn với **giờ sẵn sàng** `readyAt` (17:00). Có `ovenAt` = `readyAt − ovenLeadMin` (16:40) và `cutoffAt` (15:30) |
+| Giờ chốt sổ | `cutoffAt` | Sau thời điểm này không nhận thêm đơn cho mẻ đó. Mặc định mọi mẻ trong ngày cùng giờ chốt |
+| Suất | `capacity` | Sức chứa của mẻ theo 2 tài nguyên: `pan` (khay pizza trong lò) và `bbq` (phần BBQ hoàn thiện). Số "Còn N suất" hiển thị = suất **pizza** còn lại (§7.3) |
+| Món chính | `kind: 'pizza' \| 'bbq' \| 'combo'` | Combo = 1 pizza (chọn) + 1 BBQ (chọn) |
+| Món kèm / Upsell | `kind: 'addon'` | Hũ sốt, chai cold brew Rêu… Là dòng riêng trong đơn để đếm Prep chính xác |
+| Quà tặng | `isGift` | Dòng giá 0đ do hệ thống tự thêm (VD: nhận tại Rêu → tặng 1 hũ Sốt Bơ Tỏi) |
+| Khu vực | `Zone` | Thôn/Khu phố khách chọn trong dropdown; có phí ship riêng |
+| Tuyến | `Route` | Nhóm khu vực mà shipper giao chung một chuyến (VD "Tuyến Quốc lộ / Thị trấn") |
+| Điểm nhận | `PickupPoint` | Nơi khách tự đến lấy (mặc định: quán cà phê Rêu) |
+| Định lượng | `RecipeLine` (BOM) | Món X tiêu tốn bao nhiêu nguyên liệu Y (1 đế, 180 g mozzarella, 1 phần gừng, 1 hộp…) |
+| Bảng Tổng Hợp Chuẩn Bị | `PrepReport` | Tổng hợp nguyên liệu và chia theo mẻ/tuyến cho một ngày |
+| Kênh | `channel` | Đơn đến từ `web`, `phone`, `zalo`, `walkin` (quầy Rêu), sau này `grab`/`shopee` — **mọi kênh đều trừ suất chung** |
+
+---
+
+## 4. Những nâng cấp so với brief gốc (và lý do)
+
+Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy được ngoài đời** và tốt hơn:
+
+1. **Khung giờ nằm ở cấp đơn hàng.** Brief đặt "Chọn khung giờ" trong sheet của từng món — nếu khách đặt 2 món sẽ có 2 khung giờ mâu thuẫn. Giải pháp: chạm vào chip giờ trên Oven Bar để chọn; sheet món chỉ hiển thị dòng tóm tắt "Nhận lúc 18:00 · Đổi".
+2. **Giỏ hàng nhiều món mà vẫn "một bước".** Sheet món → "Thêm vào đơn" → thanh **Xem đơn** nổi ở đáy → sheet **Chốt đơn** chứa *tất cả* (món, giờ, SĐT, tên, cách nhận, địa chỉ, thanh toán) trên **một màn hình**.
+3. **Suất tính theo tài nguyên lò.** Combo chiếm cả khay pizza lẫn phần BBQ. Khi mẻ không đủ chỗ cho một món cụ thể, chip giờ của món đó bị vô hiệu kèm lý do ("Mẻ 18:00 hết khay pizza").
+4. **Tra SĐT an toàn.** Xem §7.7. Vẫn đạt mục tiêu "gõ xong 10 số là xong" mà không biến website thành công cụ dò địa chỉ người khác.
+5. **Đặt trước nhiều ngày** ("Tối nay · T7 07/11 · CN 08/11") → doanh thu ổn định hơn, bếp có kế hoạch sớm.
+6. **State machine cho Oven Bar** (§7.2): đang nhận · sắp chốt · kín lò · đã chốt sổ · nghỉ · tạm ngưng — mỗi trạng thái có câu chữ và CTA riêng (VD kín lò → "Đặt trước cho Thứ Bảy").
+7. **Khan hiếm thật, không giả.** "Còn 1 suất 🔥" lấy từ DB. Không bao giờ hiển thị con số bịa — vừa là đạo đức, vừa tránh rủi ro pháp lý về quảng cáo gây nhầm lẫn.
+8. **Ghim vị trí GPS** (tuỳ chọn) bên cạnh "Mô tả nhà": nông thôn ít số nhà, shipper mở thẳng Google Maps.
+9. **Chống mất đơn trên mạng 3G/4G chập chờn:** `idempotencyKey` cho mỗi lần bấm "Đặt", nút có trạng thái chờ, và **phương án dự phòng** (gọi/Zalo kèm nội dung đơn đã copy sẵn) nếu server lỗi.
+10. **Prep Calculator theo BOM**: không chỉ "9 đế", mà còn 1.620 g mozzarella, 7 hũ sốt bơ tỏi (4 bán + 3 tặng), 15 phần gừng hồng, 9 hộp pizza, 6 khay BBQ, 4 chai cold brew phải lấy từ Rêu. Có trạng thái "số liệu tạm tính" khi chưa tới giờ chốt.
+11. **Trả trước theo rủi ro** qua VietQR: khách mới/khách quen đặt COD bình thường; khách từng "bom" bị yêu cầu chuyển khoản. Giảm bom hàng mà không gây ma sát cho số đông.
+12. **Đơn từ mọi kênh trừ chung một kho suất**: chủ quán có form "Thêm đơn nhanh" trong dashboard cho đơn gọi điện/Zalo/khách tại quầy Rêu → không bao giờ overbook lò.
+13. **Danh sách bàn giao cho Rêu & đối soát đối tác**: Rêu là điểm nhận và nhà cung cấp cold brew → dashboard có danh sách khách nhận tại Rêu từng mẻ (tên, mã đơn, số tiền cần thu) và báo cáo số chai cold brew để đối soát.
+14. *(Giai đoạn 2)* **Suất muộn & danh sách chờ**: chủ quán chuẩn bị thêm vài đế dự phòng; sau giờ chốt bán "suất muộn"; khi kín lò, khách để lại SĐT để được báo khi có đơn huỷ.
+15. *(Giai đoạn 2)* **"Ship chung tuyến"**: hàng xóm đặt cùng tuyến + cùng mẻ được giảm phí ship — vừa lan truyền, vừa giảm chi phí giao (xem `MARKETING.md`).
+
+---
+
+## 5. Kiến trúc kỹ thuật
+
+### 5.1 Sơ đồ tổng thể
+
+```
+                    ┌────────────────────────── Khách (điện thoại) ─────────────────────────┐
+                    │  theheatpizza.vn  (Next.js App Router · RSC · dark · vi)               │
+                    │  ┌───────────┐  ┌────────────┐  ┌───────────────┐  ┌───────────────┐  │
+                    │  │ Oven Bar  │  │ Bento Menu │  │ Item Sheet    │  │ Checkout Sheet│  │
+                    │  │ (stream + │  │ (cached    │  │ (client)      │  │ (client)      │  │
+                    │  │  poll 30s)│  │  shell)    │  │               │  │               │  │
+                    │  └─────┬─────┘  └────────────┘  └───────────────┘  └──────┬────────┘  │
+                    └────────┼──────────────────────────────────────────────────┼───────────┘
+                     GET /api/oven                                   Server Actions: lookupCustomer,
+                             │                                       placeOrder, cancelOrderByToken
+┌───────────────┐   ┌────────▼─────────────────────────────────────────────────▼──────────────┐
+│ Chủ quán/Bếp  │──▶│  Next.js server (Node runtime)                                           │
+│ /admin/kitchen│   │  proxy.ts (gác /admin, ghi ?src=)                                        │
+└───────────────┘   │  app/actions/*  ──▶  lib/server/dal/*  ──▶  lib/domain/* (thuần)         │
+                    │  app/api/cron/daily · app/api/webhooks/sepay · instrumentation.ts        │
+                    └───────┬──────────────────────────┬───────────────────────┬───────────────┘
+                            │ Drizzle (postgres.js)    │ after(): notify       │ webhook
+                    ┌───────▼────────┐        ┌────────▼────────┐     ┌────────▼────────┐
+                    │ PostgreSQL     │        │ Telegram Bot API│     │ SePay (đối soát │
+                    │ (Neon SG / VPS)│        │ nhóm "Bếp"      │     │ chuyển khoản)   │
+                    └────────────────┘        └─────────────────┘     └─────────────────┘
+                                   VietQR: ảnh QR tạo từ img.vietqr.io (không cần API key)
+```
+
+### 5.2 Stack & lý do
+
+| Lớp | Lựa chọn | Lý do / ghi chú |
+|---|---|---|
+| Framework | **Next.js 16.3** (đã có), React 19.2, `cacheComponents: true`, `reactCompiler: true` | PPR: shell tĩnh tức thì + phần động stream vào |
+| Style | **Tailwind CSS 4** (đã có), CSS variables | Không thêm UI kit nặng |
+| Ngôn ngữ | TypeScript strict | |
+| DB | **PostgreSQL** — mặc định **Neon**, region `aws-ap-southeast-1` (Singapore) | Gần VN (~30–50 ms). Có thể thay bằng Postgres trên VPS mà không đổi code |
+| ORM / driver | **Drizzle ORM** + **`postgres` (postgres.js)** | Type-safe, migration bằng SQL thuần, chạy được cả Neon (pooled URL, `prepare: false`) lẫn Postgres tự host. Cần transaction thật cho giữ suất |
+| Validate | **Zod 4** | Dùng chung schema cho client (gợi ý lỗi) và server (bắt buộc) |
+| Auth admin | Phiên **JWT ký bằng `jose`** trong cookie httpOnly + PIN băm bằng **`@node-rs/argon2`** | Theo hướng dẫn "Stateless Sessions" trong `02-guides/authentication.md`; 1–3 nhân viên không cần dịch vụ auth bên ngoài |
+| Rate limit | **Bảng Postgres** (fixed window) | Lưu lượng thị trấn nhỏ; bớt một nhà cung cấp (Upstash) |
+| Thông báo bếp | **Telegram Bot API** | Miễn phí, tức thì, có trên mọi điện thoại |
+| Thanh toán | **VietQR** (ảnh QR từ `img.vietqr.io`) + **SePay webhook** (M6) | QR chuẩn Napas, mọi app ngân hàng quét được; SePay báo giao dịch tự động |
+| Test | **Vitest** (unit/integration), **Playwright** (e2e, viewport iPhone 13 & Pixel 7), `@axe-core/playwright` | Theo `02-guides/testing/*` |
+| Hosting | **Phương án A (khuyến nghị):** Vercel **Pro**, function region `sin1`. **Phương án B (rẻ nhất):** 1 VPS 2 GB (Docker: `next start` standalone + Postgres + Caddy) | Gói Hobby của Vercel chỉ dành cho mục đích **phi thương mại** → app bán hàng cần Pro hoặc tự host. Code không phụ thuộc API riêng của Vercel |
+| Analytics | Vercel Web Analytics *hoặc* Umami tự host + sự kiện tuỳ chỉnh | Nhẹ, không cookie quảng cáo |
+
+**Không dùng** (và lý do): Redux/Zustand (giỏ hàng nhỏ, `useReducer` + `useSyncExternalStore` đủ), thư viện drawer bên thứ ba (tự dựng trên `<dialog>` để kiểm soát hiệu năng & a11y), Framer Motion (CSS transition + Pointer Events đủ cho bottom sheet), Supabase client trên trình duyệt (DB chỉ truy cập từ server), next-intl (chỉ tiếng Việt).
+
+### 5.3 Chiến lược render với Next 16 (`cacheComponents`)
+
+| Phần | Cách render | Chi tiết |
+|---|---|---|
+| Layout, brand strip, Bento Menu | **Shell tĩnh + `'use cache'`** | `getCatalog()` dùng `'use cache'`, `cacheLife('hours')`, `cacheTag('catalog')`. Admin bật/tắt món → `updateTag('catalog')` |
+| Oven Bar | **Động, stream trong `<Suspense>`** | Server component `OvenBarServer` gọi `await connection()` rồi `getOvenStatus(now)`; truyền `initialStatus` + `serverNow` cho client component `OvenBarLive`. Fallback skeleton cùng chiều cao để CLS = 0 |
+| Cập nhật Oven Bar | **Poll** `GET /api/oven` mỗi 30 s khi tab hiển thị + khi `visibilitychange`/`focus` + ngay sau `placeOrder` | `Cache-Control: public, s-maxage=10, stale-while-revalidate=30` |
+| Sheet món / Checkout | **Client Components** | Trạng thái mở/đóng phản ánh trên URL (`?mon=…`, `?buoc=chot-don`) để nút Back của Android đóng sheet và để link chia sẻ mở thẳng món. `useSearchParams` phải nằm trong `<Suspense>` |
+| `/o/[token]` (theo dõi đơn) | Động trong `<Suspense>` | Poll 30 s khi đơn chưa hoàn tất |
+| `/admin/*` | Động; `requireStaff()` trong DAL; `router.refresh()` mỗi 20 s khi tab hiển thị | Không cache dữ liệu admin |
+
+> Lưu ý `Activity`: khi `cacheComponents` bật, route cũ được *ẩn* chứ không unmount. Sheet đang mở có thể "còn mở" khi quay lại trang — đóng sheet khi điều hướng đi (xem `02-guides/preserving-ui-state.md`).
+
+### 5.4 Danh sách route (đầy đủ — không thêm route khác)
+
+| Route | Mục đích | Ghi chú |
+|---|---|---|
+| `/` | **App đặt món** (Oven Bar, Bento Menu, sheets) | Query: `?mon=<slug>`, `?buoc=chot-don`, `?ngay=YYYY-MM-DD`, `?src=<kênh>` |
+| `/m/[slug]` | Link chia sẻ từng món, có `opengraph-image` riêng | Render **cùng** trang đặt món với sheet món mở sẵn — **không** redirect HTTP (crawler Facebook/Zalo phải đọc OG của chính URL này). `alternates.canonical = /`; đóng sheet → `router.replace('/')`. `generateStaticParams` từ catalog |
+| `/o/[token]` | Biên nhận & theo dõi đơn | `token` ngẫu nhiên 128-bit; `noindex` |
+| `/chinh-sach` | Chính sách bảo mật & điều khoản đặt hàng | Bắt buộc về pháp lý; chỉ link từ footer & checkout |
+| `/admin/login` | Đăng nhập nhân viên (tên + PIN) | |
+| `/admin/kitchen` | **Dashboard bếp** (tab: Chuẩn bị · Mẻ nướng · Đơn · Giao · Cài đặt) | Query `?ngay=`, `?tab=` |
+| `/admin/kitchen/in` | Bản in Bảng Tổng Hợp (khổ A4/A5 hoặc giấy nhiệt 80 mm) | |
+| `GET /api/oven` | Trạng thái lò cho client poll | Public, cache 10 s |
+| `GET /api/cron/daily` | Tạo mẻ cho N ngày tới; gửi Telegram tổng hợp sau giờ chốt | Bảo vệ bằng header `Authorization: Bearer ${CRON_SECRET}` |
+| `POST /api/webhooks/sepay` | Nhận giao dịch chuyển khoản | Xác thực API key header; idempotent theo mã giao dịch |
+| `app/manifest.ts`, `robots.ts`, `sitemap.ts`, `icon`, `opengraph-image` | Metadata | `/admin`, `/o` bị `disallow` |
+
+### 5.5 Cấu trúc thư mục đích
+
+Giữ quy ước hiện có (`components/`, `data/`, `lib/` ở gốc; Server Actions trong `app/actions/`).
+
+```
+app/
+  layout.tsx                    # html lang="vi", dark, font, JSON-LD, viewport-fit=cover
+  page.tsx                      # Trang đặt món (Server Component)
+  globals.css
+  m/[slug]/page.tsx             # trang đặt món + sheet mở sẵn; opengraph-image.tsx
+  o/[token]/page.tsx
+  chinh-sach/page.tsx
+  admin/
+    login/page.tsx
+    kitchen/page.tsx
+    kitchen/in/page.tsx
+    layout.tsx                  # gọi requireStaff(); robots noindex
+  actions/
+    order.ts                    # placeOrder, cancelOrderByToken
+    customer.ts                 # lookupCustomer
+    admin.ts                    # mọi mutation của dashboard
+    auth.ts                     # login, logout
+  api/
+    oven/route.ts
+    cron/daily/route.ts
+    webhooks/sepay/route.ts
+  manifest.ts  robots.ts  sitemap.ts  icon.tsx  opengraph-image.tsx
+components/
+  ui/                           # primitive: sheet.tsx, button.tsx, chip.tsx, segmented.tsx,
+                                #   stepper.tsx, field.tsx, toast.tsx, skeleton.tsx
+  store/                        # oven-bar-live.tsx, oven-bar-server.tsx, slot-chips.tsx,
+                                #   brand-strip.tsx, bento-menu.tsx, product-tile.tsx,
+                                #   item-sheet.tsx, cart-bar.tsx, checkout-sheet.tsx,
+                                #   phone-field.tsx, fulfillment-picker.tsx, order-success.tsx,
+                                #   why-preorder-sheet.tsx, store-footer.tsx, cart-provider.tsx
+  admin/                        # prep-board.tsx, batch-card.tsx, order-list.tsx,
+                                #   order-detail-sheet.tsx, route-sheet.tsx, quick-order-form.tsx,
+                                #   settings-panel.tsx, tab-bar.tsx, wake-lock.tsx
+data/
+  copy.ts                       # toàn bộ chuỗi UI tiếng Việt (typed object)
+  site.ts                       # thông tin thương hiệu, hotline, Zalo, pháp lý
+lib/
+  domain/                       # THUẦN — không import DB/Next/React
+    time.ts  phone.ts  oven-status.ts  capacity.ts  pricing.ts
+    order-status.ts  prep.ts  order-code.ts  types.ts
+    __tests__/*.test.ts
+  server/                       # mỗi file có `import 'server-only'`
+    db/schema.ts  db/client.ts  db/seed.ts
+    dal/catalog.ts  dal/schedule.ts  dal/customers.ts  dal/orders.ts
+    dal/prep.ts  dal/settings.ts
+    auth/session.ts             # encrypt/decrypt, requireStaff(role?)
+    customer-cookie.ts          # cookie "ghi nhớ" ký HMAC
+    rate-limit.ts
+    notify/telegram.ts
+    payments/vietqr.ts  payments/sepay.ts
+  client/
+    cart-store.ts               # reducer + persist localStorage (try/catch)
+    use-server-clock.ts         # bù lệch đồng hồ client/server
+    use-countdown.ts
+  format.ts                     # formatPrice, formatPhone, formatVnTime
+drizzle/                        # migrations SQL sinh bởi drizzle-kit
+drizzle.config.ts
+proxy.ts
+instrumentation.ts              # onRequestError → Telegram cảnh báo lỗi
+e2e/*.spec.ts
+docs/BLUEPRINT.md  docs/MARKETING.md
+```
+
+### 5.6 Biến môi trường
+
+| Biến | Bắt buộc | Mô tả |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Postgres (Neon: dùng URL *pooled*) |
+| `SESSION_SECRET` | ✅ | ≥ 32 byte, ký JWT phiên admin |
+| `CUSTOMER_COOKIE_SECRET` | ✅ | Ký HMAC cookie "ghi nhớ khách" |
+| `NEXT_PUBLIC_SITE_URL` | ✅ | `https://theheatpizza.vn` |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | ✅ | Bot & nhóm "Bếp The Heat" |
+| `CRON_SECRET` | ✅ | Bảo vệ `/api/cron/*` |
+| `VIETQR_BANK_BIN`, `VIETQR_ACCOUNT_NO`, `VIETQR_ACCOUNT_NAME` | ✅ (M6) | Tài khoản nhận tiền |
+| `SEPAY_WEBHOOK_KEY` | M6 | Xác thực webhook |
+| `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Phương án B | Khoá cố định khi tự host nhiều instance |
+
+Không commit file `.env*` (đã có trong `.gitignore`). Thêm `.env.example` liệt kê tên biến.
+
+---
+
+## 6. Mô hình dữ liệu
+
+### 6.1 Sơ đồ quan hệ
+
+```
+products ─┬─< recipe_lines >── ingredients
+          └─(combo_config: lựa chọn pizza/bbq)
+zones >── routes                       pickup_points
+slot_templates ──(sinh)──▶ batches >── service_days
+customers ─< addresses >── zones
+customers ─< orders >── batches
+orders ─< order_items >── products
+orders ─< order_events
+orders ─< payments
+staff        settings        rate_limits        (GĐ2: waitlist, day_stock)
+```
+
+### 6.2 Bảng (Drizzle; tên cột snake_case trong DB, camelCase trong TS)
+
+**`products`** — thực đơn (ít món, đổi hiếm; chỉnh từ dashboard tab Cài đặt)
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | text PK | slug: `pepperoni-pan` |
+| `kind` | enum `pizza·bbq·combo·addon` | |
+| `name`, `short`, `description` | text | `short` ≤ 40 ký tự cho ô Bento |
+| `price` | integer | VND |
+| `image` | text | đường dẫn `/images/...` |
+| `badge` | text null | "Bán chạy", "Mới" |
+| `uses_pan`, `uses_bbq` | smallint default 0 | pizza: 1/0, bbq: 0/1, combo: 1/1, addon: 0/0 |
+| `combo_config` | jsonb null | `[{ "key":"pizza","label":"Chọn pizza","options":["pepperoni-pan","garlic-cheese-pan"] }, { "key":"bbq", ... }]` |
+| `upsell_ids` | text[] | add-on gợi ý trong sheet món |
+| `supplier` | text null | `reu` cho cold brew → báo cáo đối soát |
+| `is_active` | bool | Có trong thực đơn |
+| `is_available` | bool | Công tắc nhanh "Hết hôm nay" |
+| `sort` | smallint | |
+
+**`ingredients`**: `id` text PK (`pan-dough`), `label` ("Đế Pan đã ủ"), `unit` (`đế·túi·g·hũ·phần·hộp·khay·chai`), `unit_weight_g` int null (túi sườn 500 → hiển thị ≈ kg), `storage` (`tủ đông·tủ mát·kệ·Rêu`), `sort`.
+
+**`recipe_lines`**: (`product_id`, `ingredient_id`) PK, `qty` numeric(10,2). Combo **không** có recipe riêng — được "nổ" thành các món thành phần theo lựa chọn khi tính Prep.
+
+**`routes`**: `id` serial, `name` ("Tuyến Khu phố 2"), `sort`.
+**`zones`**: `id` serial, `name` ("Khu phố 2"), `route_id` FK, `ship_fee` int, `sort`, `is_active`.
+**`pickup_points`**: `id` serial, `name` ("Cà phê Rêu"), `address`, `maps_url`, `gift_product_id` FK null (`sauce-garlic-butter`), `is_active`.
+
+**`slot_templates`**: `id`, `weekday` smallint (0 = CN … 6 = T7), `ready_time` time (`17:00`), `oven_lead_min` smallint (20), `cutoff_time` time (`15:30`), `cap_pan` smallint, `cap_bbq` smallint, `is_active`.
+
+**`service_days`**: `date` date PK, `status` enum `open·closed·paused`, `pause_message` text null, `order_seq` int default 0, `summary_sent_at` timestamptz null, `note`.
+
+**`batches`**
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | serial PK | |
+| `service_date` | date FK | |
+| `ready_at`, `oven_at`, `cutoff_at` | timestamptz | luôn tính từ giờ VN (§7.1) |
+| `cap_pan`, `cap_bbq` | smallint | |
+| `used_pan`, `used_bbq` | smallint default 0 | `CHECK (used_pan <= cap_pan AND used_bbq <= cap_bbq)` |
+| `status` | enum `open·closed·baking·done` | `closed` = chủ quán đóng sớm |
+| | | `UNIQUE (service_date, ready_at)` |
+
+**`customers`**: `id` uuid, `phone` text UNIQUE (dạng chuẩn `0xxxxxxxxx`), `name`, `remember` bool, `order_count`, `completed_count`, `no_show_count` int, `last_order_at`, `is_blocked` bool, `staff_note` text, `marketing_opt_in` bool, `created_at`.
+
+**`addresses`**: `id` uuid, `customer_id` FK, `zone_id` FK, `description` text, `lat`/`lng` double null, `last_used_at`.
+
+**`orders`**
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `id` | uuid PK | |
+| `code` | text UNIQUE | `TH-0611-12` (ngày-tháng + số thứ tự trong ngày); khách thấy "Đơn #12" |
+| `seq` | int | `UNIQUE (service_date, seq)` |
+| `service_date`, `batch_id` | FK | |
+| `channel` | enum `web·phone·zalo·walkin·grab·shopee` | |
+| `customer_id` | FK | |
+| `customer_name`, `customer_phone` | text | **snapshot** tại thời điểm đặt |
+| `fulfillment` | enum `delivery·pickup` | |
+| `zone_id` / `pickup_point_id` | FK null | đúng một trong hai khác null (CHECK) |
+| `address_text`, `lat`, `lng` | snapshot | |
+| `pan_units`, `bbq_units` | smallint | để trả suất khi huỷ |
+| `subtotal`, `ship_fee`, `discount`, `total` | integer | |
+| `payment_method` | enum `cod·transfer` | |
+| `payment_status` | enum `unpaid·paid·refunded` | |
+| `status` | enum `placed·confirmed·baking·ready·delivering·completed·cancelled·no_show` | §7.5 |
+| `note` | text ≤ 300 | |
+| `source` | text null | từ cookie `th_src` |
+| `tracking_token` | text UNIQUE | 22 ký tự base64url |
+| `idempotency_key` | uuid UNIQUE | |
+| `cancel_reason` | text null | |
+| `created_at`, `updated_at` | timestamptz | |
+| | | Index: `(service_date, batch_id)`, `(customer_phone)`, `(status)` |
+
+**`order_items`**: `id`, `order_id` FK, `product_id` FK, `name` (snapshot), `unit_price`, `qty`, `line_total`, `parent_item_id` FK null (add-on gắn với món chính nào — chỉ để hiển thị), `combo_choices` jsonb null (`{"pizza":"pepperoni-pan","bbq":"ribs-sv"}`), `is_gift` bool.
+
+**`order_events`** (nhật ký kiểm toán): `id`, `order_id`, `type` (`placed`, `status_changed`, `paid`, `cancelled`, `edited`), `data` jsonb, `actor` (`customer`·`staff:<id>`·`system`), `created_at`.
+
+**`payments`**: `id`, `order_id` FK null (null nếu chưa khớp), `provider` (`sepay`·`manual`), `provider_txn_id` UNIQUE, `amount`, `memo`, `raw` jsonb, `created_at`.
+
+**`staff`**: `id`, `name`, `role` enum `owner·kitchen·shipper`, `pin_hash`, `is_active`.
+
+**`settings`** (key/value jsonb, các key cố định, kiểu được định nghĩa trong `lib/domain/types.ts`):
+
+| key | Giá trị mặc định |
+|---|---|
+| `ordering` | `{ "daysAhead": 3, "closingSoonMin": 45, "fewThreshold": 2, "deliveryWindowMin": 20, "maxQtyPerLine": 10 }` |
+| `payment` | `{ "prepayPolicy": "risk_based", "prepayOverTotal": 1000000 }` |
+| `shipping` | `{ "freeShipFrom": null }` |
+| `contact` | `{ "hotline": "…", "zaloPhone": "…" }` |
+
+**`rate_limits`**: (`key` text, `window_start` timestamptz) PK, `count` int. Dọn bản ghi cũ trong cron hằng ngày.
+
+### 6.3 Bất biến (invariant) phải được test
+
+1. Với mọi batch: `used_pan = Σ pan_units` và `used_bbq = Σ bbq_units` của các đơn có `status ≠ cancelled`. Chỉ `cancelled` mới trả suất; `no_show` **không** trả (bánh đã nướng, lò đã dùng).
+2. `orders.total = subtotal + ship_fee − discount ≥ 0`; `subtotal = Σ order_items.line_total`.
+3. Prep: tổng toàn ngày = Σ các mẻ (§7.6).
+4. Mỗi đơn có đúng một trong `zone_id`/`pickup_point_id`.
+
+---
+
+## 7. Logic nghiệp vụ lõi (thuần, test được)
+
+### 7.1 `lib/domain/time.ts` — múi giờ Việt Nam
+
+```ts
+export const VN_TZ = "Asia/Ho_Chi_Minh";      // UTC+7, không có giờ mùa hè
+export type ISODate = `${number}-${number}-${number}`; // "2026-11-06"
+
+export function vnInstant(date: ISODate, hhmm: string): Date;   // new Date(`${date}T${hhmm}:00+07:00`)
+export function vnDateOf(instant: Date): ISODate;               // ngày theo giờ VN
+export function vnTimeLabel(instant: Date): string;             // "17:00"
+export function vnWeekday(date: ISODate): 0|1|2|3|4|5|6;        // 0 = Chủ nhật
+export function vnDayLabel(date: ISODate, today: ISODate): string; // "Tối nay" | "Mai" | "T7 07/11"
+export function addDays(date: ISODate, n: number): ISODate;
+export function formatRemaining(ms: number): string;
+// > 60 phút: "còn 2 giờ 15 phút" · 10–60 phút: "còn 18 phút" · < 10 phút: "còn 09:42" · ≤ 0: "đã chốt"
+```
+
+Mọi hàm nhận `now: Date` làm tham số (không tự gọi `Date.now()`) để test được và tương thích quy tắc "Random values and timestamps" của `cacheComponents`.
+
+### 7.2 `lib/domain/oven-status.ts` — state machine của Oven Bar
+
+```ts
+type SlotView = {
+  batchId: number;
+  date: ISODate;
+  readyAt: string;          // ISO
+  readyLabel: string;       // "18:00"
+  cutoffAt: string;
+  remainingPan: number;     // max(0, cap_pan - used_pan)
+  remainingBbq: number;
+  level: "plenty" | "few" | "last" | "bbq_only" | "full" | "closed";
+};
+
+type OvenStatus =
+  | { kind: "open";         date: ISODate; nextCutoffAt: string; batchIndex: number; slots: SlotView[]; upcoming: DayTab[] }
+  | { kind: "closing_soon"; date: ISODate; nextCutoffAt: string; batchIndex: number; slots: SlotView[]; upcoming: DayTab[] }
+  | { kind: "sold_out";     date: ISODate; nextOpenDate: ISODate | null; slots: SlotView[]; upcoming: DayTab[] }
+  | { kind: "after_cutoff"; date: ISODate; nextOpenDate: ISODate | null; upcoming: DayTab[] }
+  | { kind: "day_off";      date: ISODate; nextOpenDate: ISODate | null; upcoming: DayTab[] }
+  | { kind: "paused";       date: ISODate; message: string; upcoming: DayTab[] };
+
+type DayTab = { date: ISODate; label: string; hasCapacity: boolean };
+
+export function computeOvenStatus(input: {
+  now: Date;
+  days: { date: ISODate; status: "open" | "closed" | "paused"; pauseMessage?: string;
+          batches: { id: number; readyAt: Date; cutoffAt: Date; capPan: number; usedPan: number;
+                     capBbq: number; usedBbq: number; status: string }[] }[];
+  settings: { closingSoonMin: number; fewThreshold: number };
+}): OvenStatus;
+```
+
+**Quy tắc (theo thứ tự ưu tiên, xét ngày hôm nay theo giờ VN):**
+
+1. `service_days.status = paused` → `paused`.
+2. Không có ngày hôm nay / `closed` / không có mẻ nào → `day_off`.
+3. `openBatches` = các mẻ `status = open` và `now < cutoffAt`.
+   - Rỗng → `after_cutoff`.
+   - Tất cả `level ∈ {full}` → `sold_out`.
+   - `nextCutoffAt` = cutoff sớm nhất trong các mẻ còn suất; nếu `nextCutoffAt − now ≤ closingSoonMin` → `closing_soon`, ngược lại `open`.
+4. `level` của slot: `remainingPan = 0 && remainingBbq > 0` → `bbq_only`; `remainingPan = 0 && remainingBbq = 0` → `full`; `remainingPan = 1` → `last`; `remainingPan ≤ fewThreshold` → `few`; còn lại `plenty`; mẻ qua cutoff hoặc `closed` → `closed`.
+5. `batchIndex` = thứ tự (1-based) của mẻ có `nextCutoffAt` trong ngày → "mẻ 1".
+6. `nextOpenDate` = ngày gần nhất trong `daysAhead` tới có ít nhất một slot chưa `full`.
+
+**Bảng câu chữ (đặt trong `data/copy.ts`):**
+
+| kind | Dòng trạng thái | Màu chấm | CTA phụ |
+|---|---|---|---|
+| `open` | 🟢 Đang nhận đặt trước cho **tối nay** · ⏳ Chốt đơn mẻ 1 lúc **15:30** (còn 2 giờ 15 phút) | xanh `--live` có nhịp thở | — |
+| `closing_soon` | 🟠 Sắp chốt đơn mẻ 1 · **còn 18 phút** (dưới 10 phút: đếm `mm:ss`) | cam `--warn` | — |
+| `sold_out` | 🔴 Tối nay đã kín lò | đỏ `--danger` | "Đặt trước cho T7 07/11 →" |
+| `after_cutoff` | 🌙 Đã chốt sổ tối nay · Đang nhận đặt cho **T7 07/11** | xám | "Chọn T7 →" |
+| `day_off` | 🌙 Hôm nay lò nghỉ · Mở đặt cho **T7 07/11** | xám | "Chọn T7 →" |
+| `paused` | ⏸ Tạm ngưng nhận đơn: *{message}* | cam | "Gọi quán" |
+
+Hàng chip giờ: `[17:00 · Còn 3 suất]` `[18:00 · Còn 1 suất 🔥]` `[19:00 · Còn 4 suất]`; `bbq_only` → `[18:00 · Chỉ còn BBQ]`; `full` → `[19:00 · Kín lò]` (disabled).
+
+### 7.3 `lib/domain/capacity.ts`
+
+```ts
+type Requirement = { pan: number; bbq: number };
+export function requirementOf(lines: { product: Product; qty: number }[]): Requirement;
+// Σ product.usesPan × qty, Σ product.usesBbq × qty (add-on = 0)
+
+export function fits(req: Requirement, slot: { remainingPan: number; remainingBbq: number }): boolean;
+export function availabilityForProduct(product: Product, slot: SlotView):
+  { ok: true; maxQty: number } | { ok: false; reason: "no_pan" | "no_bbq" | "closed" };
+```
+
+**Giữ suất phía server (trong transaction của `placeOrder`):**
+
+```sql
+UPDATE batches
+   SET used_pan = used_pan + $pan,
+       used_bbq = used_bbq + $bbq
+ WHERE id = $batch_id
+   AND status = 'open'
+   AND now() < cutoff_at
+   AND used_pan + $pan <= cap_pan
+   AND used_bbq + $bbq <= cap_bbq
+RETURNING id;
+```
+
+0 dòng trả về → đọc lại batch để xác định lý do (`cutoff_passed` hay `slot_full`) → rollback → trả về `alternatives` (các slot khác cùng ngày & ngày kế tiếp vừa với `Requirement`). Huỷ đơn: trừ ngược trong cùng transaction với việc đổi trạng thái (`WHERE status NOT IN ('cancelled','no_show')` để không trả suất hai lần).
+
+### 7.4 `lib/domain/pricing.ts`
+
+```ts
+export function priceOrder(input: {
+  lines: { product: Product; qty: number; comboChoices?: Record<string, string>;
+           addons?: { product: Product; qty: number }[] }[];
+  fulfillment: { type: "delivery"; zone: Zone } | { type: "pickup"; point: PickupPoint; giftProduct?: Product };
+  shipping: { freeShipFrom: number | null };
+}): {
+  items: PricedItem[];      // gồm cả dòng quà isGift, unitPrice 0
+  subtotal: number; shipFee: number; discount: number; total: number;
+};
+```
+
+Quy tắc: phí ship = `zone.shipFee` (0 nếu `subtotal ≥ freeShipFrom`); nhận tại điểm → phí 0 + thêm **1** dòng quà `giftProduct` mỗi đơn; tổng là số nguyên; không cho tổng âm. Lựa chọn combo phải thuộc `combo_config.options`; add-on phải thuộc `upsell_ids` của món cha hoặc là món `addon` mua riêng.
+
+### 7.5 `lib/domain/order-status.ts` — vòng đời đơn
+
+```
+placed ──▶ confirmed ──▶ baking ──▶ ready ──┬──▶ delivering ──▶ completed
+   │            │                            ├──▶ completed (pickup đã lấy)
+   └────────────┴──▶ cancelled               └──▶ no_show
+                                         delivering ──▶ no_show
+```
+
+- `placed → confirmed` **tự động** nếu: khách có `completed_count ≥ 1` và `no_show_count = 0`, **hoặc** đã thanh toán. Ngược lại chờ chủ quán bấm xác nhận (thường sau một cuộc gọi).
+- Huỷ bởi khách (qua `/o/[token]`): chỉ khi `status ∈ {placed, confirmed}` **và** `now < cutoff_at`.
+- Huỷ bởi nhân viên: bất kỳ lúc nào trước `baking`; sau đó cần `owner` + lý do.
+- `no_show` → `customers.no_show_count += 1` (kích hoạt trả trước cho lần sau).
+- `completed` → `customers.completed_count += 1`.
+- Trạng thái hiển thị cho khách: *Đã nhận đơn* (placed/confirmed) → *Đang nướng* → *Ra lò* → *Đang giao* / *Chờ bạn ở Rêu* → *Hoàn tất*.
+
+Export `canTransition(from, to, ctx)` và dùng nó ở mọi action đổi trạng thái.
+
+### 7.6 `lib/domain/prep.ts` — Bảng Tổng Hợp Chuẩn Bị
+
+```ts
+type PrepReport = {
+  date: ISODate;
+  generatedAt: string;
+  isFinal: boolean;                  // now ≥ giờ chốt muộn nhất trong ngày
+  orderCount: number;
+  totals: {
+    mains: { pizza: number; bbq: number };
+    byProduct: { productId: string; name: string; qty: number; kind: Kind }[];   // combo đã nổ
+    ingredients: { ingredientId: string; label: string; qty: number; unit: string;
+                   approxKg?: number; breakdown?: string; storage: string }[];
+    supplier: { supplier: "reu"; productId: string; qty: number }[];             // đối soát
+  };
+  batches: {
+    batchId: number; readyLabel: string; ovenLabel: string;
+    pizza: { name: string; qty: number }[]; bbq: { name: string; qty: number }[];
+    addons: { name: string; qty: number }[];
+    routes: { routeId: number; routeName: string;
+              stops: { code: string; seq: number; name: string; phone: string; zone: string;
+                       address: string; mapsUrl?: string; collect: number; paid: boolean; note?: string }[] }[];
+    pickups: { pointName: string; orders: { code: string; seq: number; name: string; collect: number }[] }[];
+  }[];
+  warnings: { kind: "unpaid_transfer" | "allergy_note" | "unconfirmed"; orderCode: string; text: string }[];
+};
+
+export function buildPrepReport(input: { date: ISODate; now: Date; orders: OrderWithItems[];
+  products: Product[]; recipes: RecipeLine[]; ingredients: Ingredient[]; batches: Batch[];
+  zones: Zone[]; routes: Route[]; points: PickupPoint[] }): PrepReport;
+```
+
+Thuật toán:
+1. Lọc đơn của ngày, bỏ `cancelled`.
+2. Với mỗi dòng: combo → thay bằng các món thành phần theo `combo_choices` (mỗi thành phần qty = qty combo). Dòng quà vẫn tính vào nguyên liệu, **ghi rõ** "(x bán · y tặng)".
+3. Cộng dồn theo sản phẩm → nhân BOM → cộng dồn theo nguyên liệu. `approxKg = qty × unit_weight_g / 1000`.
+4. Chia theo mẻ; trong mẻ, đơn giao nhóm theo tuyến (thứ tự `routes.sort` rồi `zones.sort`), đơn nhận tại chỗ nhóm theo điểm nhận.
+5. `collect` = `total` nếu `payment_status = unpaid`, ngược lại 0.
+6. Cảnh báo: chuyển khoản chưa nhận tiền; ghi chú chứa từ khoá (`dị ứng`, `không`, `ít`, `chay`) → `allergy_note`; đơn còn `placed`.
+7. **Bất biến:** `totals.mains` = Σ các mẻ; test bắt buộc với bộ dữ liệu ở Phụ lục B.
+
+### 7.7 `lib/domain/phone.ts` & nhận diện khách cũ
+
+```ts
+export function normalizePhone(raw: string): string | null;
+// bỏ khoảng trắng . - ( ); "+84"/"84" → "0"; hợp lệ nếu /^0(3|5|7|8|9)\d{8}$/ → trả "0912345678"
+export function formatPhone(p: string): string;     // "0912 345 678"
+export function maskName(name: string): string;     // "Nguyễn Văn Tuấn" → "Tuấn"
+```
+
+**Luồng nhận diện (quan trọng về quyền riêng tư):**
+
+| Tình huống | Hệ thống làm gì | Dữ liệu trả về client |
+|---|---|---|
+| Thiết bị có cookie `th_c` hợp lệ (khách đã bật "Ghi nhớ") và SĐT khớp | Tự điền **đầy đủ** tên, khu vực, mô tả nhà | Đầy đủ (của chính họ, trên máy của họ) |
+| Thiết bị lạ, SĐT là khách cũ | Chào "Mừng **Tuấn** quay lại! Giao tới địa chỉ lần trước (**Khu phố 2**)?" → [Dùng địa chỉ này] [Nhập địa chỉ khác] | Chỉ **tên gọi** + **tên khu vực** + `savedAddressToken` (token ký, hết hạn 30 phút, server dùng để tra địa chỉ thật). **Không** trả mô tả nhà, họ tên đầy đủ, toạ độ |
+| SĐT mới | Không hiện gì đặc biệt, khách điền tiếp | `{ status: "new" }` |
+| Khách cần trả trước (từng bom hàng) | Khoá lựa chọn "Tiền mặt", giải thích nhẹ nhàng | `requiresPrepay: true` |
+
+Bảo vệ: rate-limit `lookup` 5 lần/10 phút/IP và 30 lần/ngày/IP; debounce 300 ms phía client; chỉ gọi khi đủ 10 số hợp lệ. Cookie `th_c` chỉ được đặt khi khách **chủ động bật** "Ghi nhớ thông tin cho lần sau" (mặc định tắt), httpOnly, `SameSite=Lax`, 180 ngày.
+
+### 7.8 `lib/domain/order-code.ts`
+
+`code = "TH-" + DD + MM + "-" + seq(2+ chữ số)` → `TH-0611-12`. Nội dung chuyển khoản (ASCII, không dấu cách): `TH061112`. Webhook khớp bằng regex `/TH(\d{4})(\d{2,3})/` + `service_date` trong ±7 ngày. `seq` lấy bằng `UPDATE service_days SET order_seq = order_seq + 1 … RETURNING order_seq` trong cùng transaction.
+
+---
+
+## 8. Hợp đồng API (Server Actions & Route Handlers)
+
+### 8.1 `placeOrder` — `app/actions/order.ts`
+
+```ts
+const PlaceOrderInput = z.object({
+  idempotencyKey: z.uuid(),
+  batchId: z.number().int().positive(),
+  lines: z.array(z.object({
+    productId: z.string().max(40),
+    qty: z.number().int().min(1).max(10),
+    comboChoices: z.record(z.string(), z.string()).optional(),
+    addons: z.array(z.object({ productId: z.string().max(40), qty: z.number().int().min(1).max(10) })).max(5).optional(),
+  })).min(1).max(15),
+  customer: z.object({
+    phone: z.string().max(20),
+    name: z.string().trim().min(2).max(40),
+    remember: z.boolean(),
+  }),
+  fulfillment: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("delivery"), zoneId: z.number().int(),
+               addressText: z.string().trim().min(8).max(200).optional(),
+               savedAddressToken: z.string().max(200).optional(),
+               lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional() }),
+    z.object({ type: z.literal("pickup"), pickupPointId: z.number().int() }),
+  ]),
+  paymentMethod: z.enum(["cod", "transfer"]),
+  note: z.string().trim().max(300).optional(),
+  website: z.string().max(0).optional(),     // honeypot — phải rỗng
+  startedAt: z.number().int(),               // ms; từ chối nếu điền < 3 giây
+});
+
+type PlaceOrderResult =
+  | { ok: true; code: string; seq: number; trackingPath: string; readyLabel: string; dayLabel: string;
+      total: number; status: "placed" | "confirmed";
+      payment: { method: "cod" } | { method: "transfer"; qrUrl: string; memo: string; amount: number } }
+  | { ok: false; reason: "invalid"; fieldErrors: Partial<Record<FieldKey, ErrorKey>> }
+  | { ok: false; reason: "slot_full" | "cutoff_passed"; alternatives: SlotView[] }
+  | { ok: false; reason: "unavailable"; productIds: string[] }
+  | { ok: false; reason: "prepay_required" }
+  | { ok: false; reason: "rate_limited" | "paused" | "contact_us" | "server_error" };
+```
+
+**Pipeline:** parse → honeypot/thời gian điền → rate-limit (`order:ip` 5/10 phút, `order:phone` 3/10 phút) → chuẩn hoá SĐT → tải catalog (cached) & kiểm tra `is_active && is_available` → kiểm tra lựa chọn combo/add-on → `requirementOf` + `priceOrder` → nếu đã có đơn với `idempotencyKey` → trả lại kết quả cũ → kiểm tra khách bị chặn (`contact_us`, không nói lý do) & chính sách trả trước → **transaction** {upsert khách (+ địa chỉ nếu `remember`), giữ suất (§7.3), tăng `seq`, insert `orders` + `order_items` + `order_events`} → đặt cookie `th_c` nếu `remember` → `after(() => notifyNewOrder(...))` → trả kết quả.
+
+### 8.2 Các action/route còn lại
+
+| Tên | Loại | Input | Output | Bảo vệ |
+|---|---|---|---|---|
+| `lookupCustomer` | Action | `{ phone }` | `{status:"new"} \| {status:"known"; greetingName; zoneId; zoneName; savedAddressToken; requiresPrepay} \| {status:"self"; name; zoneId; addressText; lat?; lng?}` | rate-limit §7.7 |
+| `cancelOrderByToken` | Action | `{ token, reason? }` | `{ok} \| {ok:false; reason:"too_late"\|"not_found"}` | token + `now < cutoff_at` |
+| `GET /api/oven?ngay=` | Route | — | `{ serverNow, status: OvenStatus }` | public, cache 10 s |
+| `login` / `logout` | Action | `{ staffId, pin }` | redirect | rate-limit 5/15 phút/IP |
+| `advanceOrders` | Action (admin) | `{ orderIds[], to }` | `{ updated }` | `requireStaff()` + `canTransition` |
+| `advanceBatch` | Action (admin) | `{ batchId, to: "baking"\|"ready" }` | | `requireStaff()` |
+| `markPaid` | Action (admin) | `{ orderId, method }` | | `requireStaff("owner")` |
+| `cancelOrder` | Action (admin) | `{ orderId, reason }` | | `requireStaff()`; sau `baking` cần `owner` |
+| `createQuickOrder` | Action (admin) | như `placeOrder` + `channel` | | `requireStaff()`; bỏ qua honeypot/cutoff nếu `owner` chọn "vượt giờ chốt" (ghi event) |
+| `updateBatch` | Action (admin) | `{ batchId, capPan?, capBbq?, status? }` | | `owner`; không cho `cap < used` |
+| `setDayStatus` | Action (admin) | `{ date, status, pauseMessage? }` | | `owner` |
+| `toggleProduct` | Action (admin) | `{ productId, isAvailable }` | `updateTag('catalog')` | `owner` |
+| `GET /api/cron/daily` | Route | — | `{ created, summarySent }` | `CRON_SECRET` |
+| `POST /api/webhooks/sepay` | Route | payload SePay | `200 {success:true}` | API key header; idempotent `provider_txn_id` |
+
+Mọi action admin ghi `order_events` với `actor = staff:<id>`.
+
+---
+
+## 9. Đặc tả UI/UX — Trang đặt món
+
+### 9.1 Ngôn ngữ thiết kế ("Apple-tier, dark, ấm như lửa")
+
+**Nguyên tắc:** (1) Món ăn là nhân vật chính — ảnh lớn, nền đen tuyệt đối để màu phô mai cháy nổi bật. (2) Một hành động chính mỗi màn hình. (3) Con số thật (suất, giờ, tiền) dùng `tabular-nums`. (4) Chuyển động có mục đích, mềm, tôn trọng `prefers-reduced-motion`. (5) Mọi vùng chạm ≥ 44×44 px.
+
+**Token (mở rộng `app/globals.css`, bỏ nhánh light):**
+
+| Token | Giá trị | Dùng cho |
+|---|---|---|
+| `--bg` | `#000000` | nền trang |
+| `--surface` | `#1c1c1e` | ô Bento, sheet |
+| `--elevated` | `#2c2c2e` | input, chip |
+| `--line` | `rgba(255,255,255,.10)` | viền |
+| `--text` / `--secondary` / `--tertiary` | `#f5f5f7` / `#a1a1a6` / `#6e6e73` | chữ |
+| `--accent` | `#ff3d00` | màu lửa thương hiệu: CTA chính, 🔥 |
+| `--accent-glow` | `color-mix(in srgb, #ff3d00 22%, transparent)` | gradient ấm sau ô Combo |
+| `--live` | `#30d158` | chấm "đang nhận" |
+| `--warn` | `#ff9f0a` | sắp chốt, tạm ngưng |
+| `--danger` | `#ff453a` | kín lò, lỗi |
+| Bo góc | ô 28 px · sheet 32 px (trên) · input 16 px · chip/nút 999 px | |
+| Easing | `--ease-out: cubic-bezier(0.22,1,0.36,1)` (đã có) · `--ease-sheet: cubic-bezier(0.32,0.72,0,1)` | |
+| Font | Be Vietnam Pro 400/500/600/700 (đã có) | tiêu đề 600, giá 600 `tabular-nums` |
+
+Giao diện chỉ tối: `color-scheme: dark`, `theme-color #000000`, viewport `viewport-fit=cover` để dùng `env(safe-area-inset-*)`.
+
+### 9.2 Bố cục trang (mobile 390 px, từ trên xuống)
+
+```
+┌──────────────────────────────────────────┐
+│● Đang nhận đặt trước cho tối nay         │  ◀ KHU VỰC 1: Live Oven Bar (sticky)
+│⏳ Chốt đơn mẻ 1 lúc 15:30 · còn 2g15p     │
+│ Tối nay │ T7 07/11 │ CN 08/11             │  ◀ chỉ hiện khi daysAhead > 0
+│[17:00·Còn 3][18:00·Còn 1 🔥][19:00·Còn 4]│
+├──────────────────────────────────────────┤
+│ [H] THE HEAT PIZZA                        │  ◀ Brand strip (1 dòng + 1 câu)
+│ Pan pizza kiểu Mỹ & BBQ sous-vide         │
+│ Nướng theo mẻ · Đặt trước mới làm  (?)    │  ◀ chạm "(?)" mở sheet "Vì sao đặt trước?"
+├──────────────────────────────────────────┤
+│┌────────────────────────────────────────┐│  ◀ KHU VỰC 2: Bento Menu
+││  COMBO ĐÔI   Pizza + BBQ     [Bán chạy]││     ô hero, col-span-2, 16:10
+││  289.000đ                          ( + )││
+│└────────────────────────────────────────┘│
+│┌──────────────────┐┌──────────────────┐ │
+││ PEPPERONI PAN    ││ PHÔ MAI BƠ TỎI   │ │     ô dọc 3:4
+││ 159.000đ   ( + ) ││ 149.000đ   ( + ) │ │
+│└──────────────────┘└──────────────────┘ │
+│┌────────────────────────────────────────┐│
+││ SƯỜN BBQ SOUS-VIDE 24H         ( + )   ││     ô ngang 2:1
+│└────────────────────────────────────────┘│
+│┌────────────────────────────────────────┐│
+││ BBQ #2                          ( + )  ││
+│└────────────────────────────────────────┘│
+│┌──────────────────┐┌──────────────────┐ │
+││ SỐT CHẤM  10k    ││ COLD BREW RÊU 18k│ │     ô nhỏ 1:1 (add-on mua riêng)
+│└──────────────────┘└──────────────────┘ │
+├──────────────────────────────────────────┤
+│ 1 Chọn món · 2 Chọn mẻ · 3 Nhận nóng hổi │  ◀ "Cách đặt" 1 dòng
+│ ☕ Nhận tại Rêu: … · Bản đồ               │
+│ ☎ 09xx · Zalo · Chính sách · Thông tin KD │  ◀ footer tối giản (bắt buộc pháp lý)
+└──────────────────────────────────────────┘
+        ┌────────────────────────────────┐
+        │ 2 món · Nhận 18:00   348.000đ ▶ │      ◀ Cart bar nổi (khi giỏ có món)
+        └────────────────────────────────┘
+```
+
+Desktop (≥ 1024 px): nội dung `max-w-5xl`, Bento 4 cột (Combo 2×2, pizza 1×2, BBQ 2×1, add-on 1×1); sheet hiển thị dạng panel giữa màn hình rộng 480 px.
+
+### 9.3 Khu vực 1 — Live Oven Bar
+
+- **Sticky** `top-0`, nền `rgba(0,0,0,.72)` + `backdrop-blur-xl` (giống header hiện có), viền dưới `--line`.
+- **Hai trạng thái chiều cao:** mở rộng (≈ 104 px: dòng trạng thái + tab ngày + chip) và thu gọn (≈ 48 px: một dòng "● Chốt 15:30 · còn 2g15p · [18:00 ▾]") khi cuộn quá 120 px. Dùng `IntersectionObserver` với phần tử mốc, **không** dùng scroll listener. Chuyển đổi bằng `grid-template-rows` transition 240 ms.
+- **Đồng hồ:** server gửi `serverNow`; client tính `offset = serverNow − Date.now()` lúc nhận, mọi đếm ngược dùng `Date.now() + offset`. Cập nhật mỗi 30 s khi > 10 phút, mỗi 1 s khi < 10 phút. Khi chạm `cutoffAt` → gọi lại `/api/oven` ngay.
+- **Trợ năng:** chuỗi đếm ngược không đặt trong `aria-live` (tránh đọc mỗi giây); chỉ thông báo `aria-live="polite"` khi `kind` đổi (VD chuyển sang `closing_soon`).
+- **Chip giờ:** chạm → chọn mẻ cho đơn (lưu trong cart store), hiệu ứng scale 0.97 + rung nhẹ `navigator.vibrate?.(8)` trên Android, toast "Đã chọn nhận lúc 18:00". Mặc định chọn mẻ sớm nhất còn suất. Chip `few/last` có 🔥 và viền `--accent`. Hàng chip cuộn ngang với `scroll-snap`.
+- **Chấm xanh "live":** 8 px, `box-shadow` nhịp thở 2 s; tắt animation khi reduced-motion.
+
+### 9.4 Khu vực 2 — Bento Menu "Ít mà Chất"
+
+- 6 ô tối đa. Thứ tự & kích thước do `products.sort` + `kind` quyết định: Combo (hero) → 2 pizza → 2 BBQ → ô add-on.
+- **Ô món:** ảnh full-bleed (`next/image`, `sizes` chính xác, ô hero `preload`), lớp phủ gradient đen 0→70% ở đáy, tên (600, 17 px), mô tả ngắn (13 px, `--secondary`), giá, nút "+" tròn 44 px góc phải dưới. Huy hiệu nhỏ "Kèm gừng hồng" trên món chính.
+- **Trạng thái ô:** `is_available = false` hoặc mẻ đang chọn không còn chỗ cho món đó → ảnh grayscale 60%, nhãn "Hết mẻ 18:00 · Xem mẻ khác" (vẫn bấm được để mở sheet và đổi mẻ). Món đã có trong giỏ → huy hiệu số lượng trên nút "+".
+- **Tương tác:** chạm cả ô = mở Item Sheet; chạm "+" ở món đơn giản (không combo, không lựa chọn bắt buộc) = thêm nhanh 1 vào giỏ + toast "Đã thêm · Hoàn tác". Hover desktop: ảnh zoom 1.04 (easing hiện có).
+
+### 9.5 Item Sheet (Bottom Sheet chi tiết món)
+
+```
+            ━━━━━  (tay nắm)
+┌──────────────────────────────────────────┐
+│ [ảnh 16:10, bo 24]                        │
+│ Pan Pizza Pepperoni             159.000đ  │
+│ Đế pan giòn, viền phô mai cháy caramel,   │
+│ pepperoni cuộn mép.                       │
+│ ✓ Kèm 1 phần Gừng hồng muối chống ngấy    │  ◀ ghi chú bắt buộc của brief
+│                                           │
+│ (chỉ Combo) Chọn pizza  ◉ Pepperoni ○ Bơ tỏi │
+│             Chọn BBQ    ◉ Sườn      ○ BBQ #2 │
+│                                           │
+│ THÊM CHO NGON                             │
+│ ☐ Hũ Sốt Bơ Tỏi chấm viền bánh  +10.000đ  │
+│ ☐ Hũ Sốt BBQ khói               +10.000đ  │
+│ ☐ Chai Cà phê ủ lạnh Rêu        +18.000đ  │
+│                                           │
+│ 🕕 Nhận lúc 18:00 · tối nay        Đổi ›  │  ◀ mở danh sách chip ngay trong sheet
+│ Số lượng                       [−  1  +]  │
+├──────────────────────────────────────────┤
+│ [      Thêm vào đơn · 159.000đ       ]    │  ◀ footer dính, có safe-area
+└──────────────────────────────────────────┘
+```
+
+- Mở ở ~88% chiều cao; nội dung cuộn bên trong với `overscroll-behavior: contain`.
+- Add-on là **dòng riêng** trong giỏ (gắn `parentKey` để hiển thị thụt lề dưới món cha).
+- Nếu mẻ đang chọn không đủ chỗ cho món: dòng giờ chuyển đỏ "Mẻ 18:00 hết khay pizza" + tự gợi ý mẻ gần nhất còn chỗ ("Chọn 19:00?").
+- Số lượng tối đa = `min(maxQtyPerLine, availability.maxQty)`.
+- Giá trên nút cập nhật theo số lượng + add-on (tween số 150 ms).
+
+### 9.6 Cart Bar nổi
+
+- Xuất hiện (trượt từ dưới, 280 ms) khi giỏ ≥ 1 món; cố định `bottom: calc(12px + env(safe-area-inset-bottom))`, rộng `min(100% − 32px, 480px)`, nền trắng `--text` chữ đen `--bg` (đảo màu kiểu Apple Pay, nổi trên nền tối). Màu `--accent` để dành riêng cho nút cuối "Đặt lò".
+- Nội dung: "2 món · Nhận 18:00" | "348.000đ" | "Đặt ngay ›". Chạm → `?buoc=chot-don` mở Checkout Sheet.
+- Khi số liệu đổi: hiệu ứng "nảy" 1 lần (scale 1.03).
+
+### 9.7 Khu vực 3 — One-Step Checkout (Sheet "Chốt đơn")
+
+```
+            ━━━━━
+┌──────────────────────────────────────────┐
+│ Chốt đơn                          Đóng ✕ │
+│ 1× Combo Đôi (Pepperoni + Sườn) 289.000  │ [−1+]
+│    + Hũ Sốt Bơ Tỏi               10.000  │
+│ 1× Pan Pizza Bơ tỏi             149.000  │ [−1+]
+│ Gợi ý: [+ Cold brew Rêu 18k] [+ Sốt BBQ] │
+├──────────────────────────────────────────┤
+│ NHẬN LÚC   Tối nay ▾                      │
+│ [17:00·3] [18:00·2🔥] [19:00·Kín lò]      │
+├──────────────────────────────────────────┤
+│ Số điện thoại                             │
+│ [ 0912 345 678                      ✓ ]   │  ◀ inputMode="numeric", autocomplete="tel"
+│ 👋 Mừng Tuấn quay lại! Giao tới Khu phố 2?│
+│ [Dùng địa chỉ này]  [Nhập địa chỉ khác]   │
+│ Tên        [ Tuấn                     ]   │
+│                                           │
+│ CÁCH NHẬN                                 │
+│ ┌──────────────────┐┌──────────────────┐  │
+│ │🛵 Giao tận nhà   ││☕ Ghé Rêu lấy     │  │
+│ │ +10.000–15.000đ  ││ Free ship        │  │
+│ │                  ││ + Tặng Sốt Bơ Tỏi│  │
+│ └──────────────────┘└──────────────────┘  │
+│ Thôn/Khu phố [ Khu phố 2 — 10.000đ    ▾]  │  ◀ <select> gốc của OS
+│ Mô tả nhà    [ Nhà mái tôn xanh, cạnh   ] │
+│              [ tạp hoá Cô Ba…           ] │
+│ 📍 Ghim vị trí hiện tại (giúp shipper)     │
+│                                           │
+│ THANH TOÁN  ◉ Tiền mặt khi nhận           │
+│             ○ Chuyển khoản (mã QR)        │
+│ + Ghi chú cho bếp                          │
+│ ☐ Ghi nhớ thông tin cho lần sau           │
+├──────────────────────────────────────────┤
+│ Tạm tính 448.000 · Ship 10.000            │
+│ [  Đặt lò 18:00 · 458.000đ  ]             │  ◀ CTA màu --accent
+│ Đặt hàng là đồng ý Chính sách · Huỷ miễn  │
+│ phí trước 15:30                            │
+└──────────────────────────────────────────┘
+```
+
+**Hành vi chi tiết**
+
+- **Thứ tự trường cố ý:** SĐT trước (để tự điền) → Tên → Cách nhận → Khu vực + Mô tả nhà (ẩn mượt khi chọn "Ghé Rêu lấy") → Thanh toán.
+- **SĐT:** tự định dạng nhóm `0912 345 678` khi gõ; chấp nhận dán `+84…`. Đủ 10 số hợp lệ → spinner nhỏ → kết quả `lookupCustomer` (§7.7). Bàn phím số. Lỗi hiển thị khi blur, không phải khi đang gõ.
+- **Khu vực:** `<select>` gốc (thân thiện mobile, có sẵn a11y), mỗi option ghi phí. Lần đầu mở sheet, nếu có cookie "ghi nhớ" → chọn sẵn.
+- **Mô tả nhà:** placeholder hướng dẫn mốc nhận diện (màu nhà, cạnh tiệm gì, đối diện gì). Tối thiểu 8 ký tự.
+- **Ghim vị trí:** `navigator.geolocation.getCurrentPosition` (timeout 8 s, `enableHighAccuracy`); thành công → "Đã ghim · sai số ~15 m · Bỏ ghim". Thất bại → im lặng, không chặn đơn.
+- **Cách nhận:** 2 thẻ lớn dạng segmented. Chọn "Ghé Rêu lấy" → dòng quà "🎁 Hũ Sốt Bơ Tỏi — Tặng" xuất hiện trong tóm tắt, phí ship = 0.
+- **Thanh toán:** "Chuyển khoản" → sau khi đặt hiển thị VietQR. Nếu `requiresPrepay` → chỉ còn "Chuyển khoản", kèm câu "Đơn này cần chuyển khoản trước để giữ suất".
+- **Bàn phím ảo iOS/Android:** lắng nghe `visualViewport.resize` → cập nhật biến CSS `--kb` để footer CTA nằm trên bàn phím và trường đang focus luôn hiển thị (`scrollIntoView({block:'center'})`).
+- **Gửi đơn:** nút có 3 trạng thái (bình thường → "Đang giữ suất…" + spinner → thành công). Tạo `idempotencyKey` (UUID) khi mở sheet, giữ nguyên khi bấm lại. Chống bấm đúp.
+- **Lỗi:**
+  - `invalid` → lỗi dưới từng trường, cuộn tới lỗi đầu tiên, rung 2 nhịp.
+  - `slot_full`/`cutoff_passed` → banner trong sheet: "Mẻ 18:00 vừa kín lò 😢 · [19:00 còn 2 suất] [T7 18:00]" — chạm 1 lần để chuyển và đặt lại.
+  - `unavailable` → đánh dấu món hết, gợi ý thay thế.
+  - `server_error`/mất mạng → "Chưa gửi được đơn. [Thử lại] hoặc [Gọi quán] [Nhắn Zalo]" — nút Zalo sao chép sẵn nội dung đơn vào clipboard.
+- **Lưu nháp:** giỏ + thông tin checkout lưu `localStorage` (`th_cart_v1`, try/catch, hết hạn khi ngày phục vụ đã qua) — khách thoát ra vào lại không mất.
+
+### 9.8 Thành công & theo dõi đơn
+
+Sheet chuyển sang màn thành công (cùng sheet, không chuyển trang):
+
+```
+               ✓  (vẽ nét 400 ms)
+     Đơn #12 đã giữ chỗ ở mẻ 18:00
+ Bếp đút lò 17:40 · Giao tới Khu phố 2 khoảng 18:00–18:20
+ ┌──────────────────────────────┐
+ │  [VietQR]  458.000đ           │   ◀ chỉ khi chuyển khoản
+ │  Nội dung: TH061112           │
+ │  [Lưu mã QR]  [Sao chép STK]  │
+ └──────────────────────────────┘
+ [ Theo dõi đơn ]   [ Nhắn Zalo cho quán ]
+ Huỷ miễn phí trước 15:30 hôm nay.
+```
+
+- `/o/[token]`: dòng thời gian trạng thái (§7.5), chi tiết đơn, thời gian dự kiến, nút gọi/Zalo, nút **Huỷ đơn** (đến giờ chốt), VietQR nếu chưa trả, và sau khi hoàn tất: "Đặt lại đơn này" + "Đánh giá trên Google".
+- Giỏ được xoá sau khi đặt thành công (bằng action của reducer, **không** dùng `useEffect` + `setState`).
+
+### 9.9 Bottom Sheet primitive (`components/ui/sheet.tsx`)
+
+- Nền tảng: phần tử **`<dialog>`** + `showModal()` → có sẵn focus trap, `Esc`, nền `inert`. `::backdrop` đen 50% + blur 4 px.
+- Mở: `transform: translateY(100%) → 0`, 420 ms `--ease-sheet`; đóng 280 ms. Reduced-motion → fade 120 ms.
+- **Kéo để đóng:** Pointer Events trên tay nắm & phần header; kéo xuống > 120 px hoặc vận tốc > 0,5 px/ms → đóng; ngược lại bật về. Không kéo khi nội dung bên trong đang cuộn chưa ở đỉnh.
+- **Đồng bộ URL:** mở sheet = `history.pushState` (qua router) với query tương ứng; nút Back đóng sheet. Đóng bằng tay = `history.back()` nếu sheet được mở bằng push trong phiên này, ngược lại `replace`.
+- Khoá cuộn nền: `html { overflow: hidden }` khi mở; trả focus về phần tử đã mở sheet khi đóng.
+- Props: `open`, `onOpenChange`, `title` (gắn `aria-labelledby`), `snap: "auto" | "tall" | "full"`, `footer` (slot dính đáy).
+
+### 9.10 Microcopy & giọng văn
+
+- Ấm, ngắn, địa phương; xưng "bạn" trong UI chung. **Không** đoán giới tính khách ("anh/chị") khi chào theo tên — dùng "Mừng Tuấn quay lại!".
+- Động từ thương hiệu: "Đặt lò", "Ra lò", "Mẻ", "Chốt sổ".
+- Con số luôn cụ thể: "Còn 1 suất", "còn 18 phút", "khoảng 18:00–18:20".
+- Lỗi không đổ lỗi cho khách: "Số này có vẻ thiếu 1 chữ số" thay cho "SĐT không hợp lệ".
+- Toàn bộ chuỗi nằm trong `data/copy.ts`.
+
+### 9.11 Trợ năng (WCAG 2.2 AA)
+
+Tương phản ≥ 4.5:1 (đã kiểm tra `--secondary` trên `--bg`); mọi ảnh có `alt` mô tả món; sheet có `aria-labelledby`; chip giờ là `role="radio"` trong `role="radiogroup"`; stepper có nhãn "Giảm/Tăng số lượng Pepperoni"; trạng thái gửi đơn qua `aria-live`; kiểm tra phóng to 200% và VoiceOver/TalkBack cho luồng đặt món; `@axe-core/playwright` 0 lỗi nghiêm trọng.
+
+---
+
+## 10. Khu vực 4 — Kitchen Dashboard `/admin/kitchen`
+
+### 10.1 Nguyên tắc
+
+- **Dùng trên điện thoại trong bếp** (tay dính bột): chữ lớn, nút ≥ 56 px, tương phản cao, thao tác hàng loạt.
+- **Một màn hình, 5 tab** (tab bar dưới đáy trên mobile, sidebar trên tablet ngang): **Chuẩn bị · Mẻ nướng · Đơn · Giao · Cài đặt**. Bộ chọn ngày ở header (mặc định hôm nay).
+- **Giữ màn hình sáng:** Screen Wake Lock API (nút "Chế độ bếp"), tự xin lại khi tab hiển thị trở lại.
+- **Tự làm mới:** `router.refresh()` mỗi 20 s khi tab hiển thị; có đơn mới → toast + âm "ding" (mở khoá âm thanh sau lần chạm đầu) + huy hiệu trên tab Đơn.
+- Hiển thị "Cập nhật 12 giây trước"; mất mạng → banner "Đang ngoại tuyến — số liệu có thể cũ".
+
+### 10.2 Tab "Chuẩn bị" — Bảng Tổng Hợp Chuẩn Bị (Batch Prep Calculator)
+
+```
+┌ THE HEAT · BẾP ──────────── Thứ Sáu 06/11 ▾ ┐
+│ 🔒 ĐÃ CHỐT SỔ 15:30 · 12 đơn đặt trước       │  ◀ trước giờ chốt: "⏳ TẠM TÍNH · còn 1g05p"
+│ TỔNG HỢP NƯỚNG TỐI NAY                        │
+│ 9 Pizza · 6 BBQ                                │
+├───────────────────────────────────────────────┤
+│ LẤY RA TỦ (chạm để đánh dấu đã lấy)           │
+│ ☐ Đế Pan Pizza ................ 9 đế          │
+│     5 Pepperoni · 4 Phô mai Bơ tỏi            │
+│ ☐ Túi Sườn sous-vide .......... 6 túi (≈3,0kg)│
+│ ☐ Mozzarella .................. 1.620 g       │
+│ ☐ Pepperoni lát ............... 300 g         │
+│ ☐ Hũ Sốt Bơ Tỏi ............... 7 hũ          │
+│     4 bán · 3 tặng                             │
+│ ☐ Hũ Sốt BBQ khói ............. 3 hũ          │
+│ ☐ Gừng hồng muối .............. 15 phần       │
+│ ☐ Hộp pizza / Khay BBQ ........ 9 / 6         │
+│ ☐ Cold brew Rêu (lấy từ Rêu) .. 4 chai        │
+├───────────────────────────────────────────────┤
+│ CHIA THEO CA NƯỚNG                             │
+│ ▸ Mẻ 16:40 → Giao 17:00 · 3 Pizza + 2 BBQ     │
+│   🛵 Tuyến Khu phố 2: Tuấn · Lan · Huy         │
+│ ▸ Mẻ 17:40 → Giao 18:00 · 4 Pizza + 3 BBQ     │
+│   🛵 Tuyến Quốc lộ / Thị trấn: Minh · Hoa ·   │
+│      Phúc · Vy · Ngọc                          │
+│   ☕ Rêu: Khánh                                │
+│ ▸ Mẻ 18:40 → Giao 19:00 · 2 Pizza + 1 BBQ     │
+│   🛵 Tuyến Khu phố 2: Trang                    │
+│   ☕ Rêu: Dũng · Bảo                           │
+├───────────────────────────────────────────────┤
+│ ⚠ 2 đơn chuyển khoản chưa nhận tiền (#5, #9)  │
+│ ⚠ #7 ghi chú: "Ít cay, dị ứng đậu phộng"       │
+├───────────────────────────────────────────────┤
+│ [🖨 In bảng]  [📤 Gửi Telegram]  [📋 Copy]      │
+└───────────────────────────────────────────────┘
+```
+
+> Ghi chú cho chủ quán: ví dụ trong brief có 9 pizza tổng nhưng chỉ liệt kê 2 mẻ (3 + 4 = 7). Hệ thống luôn đảm bảo **tổng = Σ các mẻ**; ví dụ trên có thêm mẻ 18:40 để khớp số. Bộ dữ liệu đầy đủ ở Phụ lục B.
+
+- Tick "đã lấy" lưu `localStorage` theo ngày (tiện ích cá nhân, không cần DB).
+- Nhấn vào một mẻ → nhảy sang tab Mẻ nướng tại mẻ đó.
+- Telegram tự động gửi bảng này **một lần** sau giờ chốt muộn nhất của ngày (cron, idempotent bằng `summary_sent_at`).
+
+### 10.3 Tab "Mẻ nướng"
+
+Thẻ cho từng mẻ, sắp theo giờ, có đếm ngược tới `ovenAt` ("Đút lò sau 12 phút"); liệt kê từng đơn (số thứ tự lớn, món, add-on, ghi chú nổi bật). Nút hàng loạt: **[Đút lò]** (confirmed → baking), **[Ra lò]** (baking → ready). Đơn còn `placed` hiển thị viền cam + nút "Gọi xác nhận" (`tel:`).
+
+### 10.4 Tab "Đơn"
+
+Danh sách đơn của ngày; lọc theo trạng thái/mẻ/thanh toán; tìm theo SĐT/tên/mã. Chạm → sheet chi tiết: gọi (`tel:`), Zalo (`https://zalo.me/<sđt>`), copy địa chỉ, mở Google Maps (`https://www.google.com/maps/search/?api=1&query=<lat>,<lng>`), đánh dấu đã trả tiền, đổi mẻ (kiểm tra suất), huỷ (lý do), sửa ghi chú, xem lịch sử `order_events`. Nút nổi **"+ Thêm đơn nhanh"** cho đơn gọi điện/Zalo/khách tại Rêu (`createQuickOrder`, chọn `channel`).
+
+### 10.5 Tab "Giao"
+
+Theo từng mẻ → từng tuyến: danh sách điểm giao (thứ tự kéo-thả), tổng tiền cần thu (COD) của tuyến, nút:
+- **"Copy gửi shipper"** — văn bản định dạng sẵn để dán vào Zalo:
+  ```
+  🛵 MẺ 17:00 · TUYẾN KHU PHỐ 2 · 3 điểm · Thu 616.000đ
+  1) #01 Tuấn 0912 345 678 — Nhà mái tôn xanh cạnh tạp hoá Cô Ba — THU 317.000đ
+     📍 https://www.google.com/maps/search/?api=1&query=15.7412,108.3615
+  2) #02 Lan … — ĐÃ CK
+  3) #03 Huy … — THU 299.000đ
+  ```
+- **"Bắt đầu giao tuyến"** → các đơn chuyển `delivering`.
+- **Danh sách bàn giao cho Rêu** (đơn nhận tại Rêu của mẻ: số thứ tự, tên, tiền cần thu) — có nút Copy để gửi nhân viên Rêu.
+
+### 10.6 Tab "Cài đặt" (chỉ `owner`)
+
+Tạm ngưng/mở lại hôm nay (kèm lời nhắn) · Đóng một ngày · Sức chứa từng mẻ (không cho thấp hơn đã dùng) · Bật/tắt "Hết hôm nay" cho từng món · Mẫu khung giờ theo thứ trong tuần · Khu vực & phí ship · Nhân viên & PIN · **"Tạo bài đăng"**: sinh sẵn nội dung đăng Facebook/Zalo từ số suất thật ("🔥 Tối nay còn 4 suất mẻ 19:00 — đặt tại theheatpizza.vn/?src=fb-post") — xem `MARKETING.md`.
+
+### 10.7 Bản in `/admin/kitchen/in`
+
+CSS `@media print` cho A5 và giấy nhiệt 80 mm (`@page { size: 80mm auto; margin: 4mm }`), chữ đen trên trắng, chỉ gồm Bảng Tổng Hợp + danh sách theo mẻ. Giai đoạn 2: nhãn dán hộp (mã đơn, tên, mẻ, món) khổ 50×30 mm.
+
+### 10.8 Đăng nhập & phân quyền
+
+`/admin/login`: chọn tên nhân viên → nhập PIN 6 số (bàn phím số lớn). Phiên JWT 30 ngày, httpOnly, Secure, `SameSite=Lax`. `proxy.ts` chỉ kiểm tra *lạc quan* (có cookie hay không) để redirect; **kiểm tra thật** ở `requireStaff(role?)` trong DAL, gọi trong mọi page/action admin.
+
+| Quyền | owner | kitchen | shipper |
+|---|---|---|---|
+| Xem Chuẩn bị/Mẻ/Đơn/Giao | ✅ | ✅ | Giao (tuyến được giao) |
+| Đổi trạng thái đơn | ✅ | ✅ (đến `ready`) | `delivering`→`completed`/`no_show` |
+| Đánh dấu đã trả tiền, huỷ sau khi nướng | ✅ | ❌ | ❌ |
+| Cài đặt | ✅ | ❌ | ❌ |
+
+---
+
+## 11. Thanh toán & thông báo
+
+### 11.1 VietQR (M6)
+
+- Ảnh QR: `https://img.vietqr.io/image/${BANK_BIN}-${ACCOUNT_NO}-compact2.png?amount=${total}&addInfo=${memo}&accountName=${encodeURIComponent(ACCOUNT_NAME)}` — `memo` dạng `TH061112` (ASCII, không dấu cách).
+- Hiển thị: ảnh QR + số tiền + nội dung + nút "Lưu mã QR" (tải ảnh) + "Sao chép số tài khoản" + "Sao chép nội dung".
+- Kiểm tra lại tài liệu VietQR trước khi code (tham số template có thể đổi).
+
+### 11.2 SePay webhook (M6)
+
+- Chủ quán đăng ký SePay, liên kết tài khoản nhận, cấu hình webhook tới `/api/webhooks/sepay` kèm API key.
+- Xử lý: xác thực header → lưu `payments` (idempotent theo `provider_txn_id`) → tìm mã đơn trong nội dung → nếu `amount ≥ order.total` → `payment_status = paid`, ghi event, nếu `placed` thì chuyển `confirmed` → Telegram "💰 #12 đã chuyển khoản 458.000đ". Không khớp → lưu `order_id = null` và cảnh báo Telegram để chủ quán khớp tay.
+- **Agent phải đọc tài liệu SePay hiện hành** để lấy đúng tên trường payload và cách xác thực; không đoán.
+
+### 11.3 Telegram (M4)
+
+| Sự kiện | Nội dung |
+|---|---|
+| Đơn mới | "🆕 #12 · Mẻ 18:00 · Tuấn 0912 345 678 · KP2 · 1 Combo + 1 Pizza Bơ tỏi · 458k · COD" + link mở đơn trong dashboard |
+| Đơn cần xác nhận | thêm dòng "⚠ Khách mới — gọi xác nhận" |
+| Huỷ đơn | "❌ #12 huỷ bởi khách · trả 2 suất mẻ 18:00" |
+| Thanh toán | "💰 …" |
+| Sắp kín lò | "🔥 Mẻ 18:00 còn 1 suất" (một lần/mẻ) |
+| Sau giờ chốt | Bảng Tổng Hợp dạng text (giống §10.2) |
+| Lỗi server | từ `instrumentation.ts` `onRequestError` (giới hạn 1 tin/phút) |
+
+Gửi trong `after()` để không làm chậm phản hồi cho khách; lỗi gửi Telegram không được làm hỏng đơn.
+
+### 11.4 Thông báo cho khách
+
+- **M1–M6:** màn hình thành công + trang `/o/[token]` + nút "Nhắn Zalo cho quán".
+- **Giai đoạn 2:** Zalo OA + ZNS (cần OA doanh nghiệp đã xác thực, mẫu tin được duyệt, có phí mỗi tin) cho "Đã xác nhận", "Bánh ra lò", "Shipper đang tới".
+
+---
+
+## 12. Bảo mật, quyền riêng tư & pháp lý
+
+**Bảo mật ứng dụng**
+- Mọi Server Action: zod + kiểm tra quyền + không tin dữ liệu client (theo `02-guides/data-security.md`). Dùng `import 'server-only'` cho `lib/server/*`.
+- Rate-limit bảng Postgres: `lookup`, `order`, `login`, `cancel`. Honeypot + thời gian điền tối thiểu. Cloudflare Turnstile chỉ thêm khi thấy lạm dụng.
+- Cookie: httpOnly, Secure, `SameSite=Lax`. Header bảo mật trong `next.config.ts` (`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)`), CSP cơ bản theo `02-guides/content-security-policy.md`.
+- `/admin/*`, `/o/*`: `noindex` + `disallow` trong `robots.ts`.
+- Token theo dõi đơn ngẫu nhiên 128-bit; mã đơn ngắn (`TH-0611-12`) **không** đủ để xem đơn.
+
+**Quyền riêng tư (Nghị định 13/2023/NĐ-CP & Luật Bảo vệ dữ liệu cá nhân hiệu lực từ 01/01/2026)**
+- Thu thập tối thiểu: SĐT, tên gọi, khu vực, mô tả nhà, (tuỳ chọn) toạ độ.
+- Trang `/chinh-sach`: mục đích, thời gian lưu (đề xuất: địa chỉ của khách không bật "ghi nhớ" được xoá/ẩn danh sau 90 ngày), quyền xoá dữ liệu (liên hệ hotline/Zalo).
+- "Ghi nhớ thông tin" và "nhận tin khuyến mãi" là **hai lựa chọn riêng**, mặc định tắt.
+- Tra SĐT không trả dữ liệu nhạy cảm (§7.7).
+- Nên tham vấn chuyên môn pháp lý trước khi ra mắt chính thức.
+
+**Thương mại điện tử**
+- Website bán hàng phải **thông báo với Bộ Công Thương** (online.gov.vn) theo NĐ 52/2013/NĐ-CP (sửa đổi bởi NĐ 85/2021/NĐ-CP) → gắn logo "Đã thông báo" ở footer khi được duyệt.
+- Footer hiển thị: tên hộ kinh doanh/doanh nghiệp, số ĐKKD/MST, địa chỉ, hotline, email.
+- Giá hiển thị là giá cuối cùng khách trả (đã gồm ship khi chọn khu vực).
+
+---
+
+## 13. Hiệu năng, SEO, PWA, giám sát
+
+### 13.1 Ngân sách hiệu năng (đo trên Android tầm trung, Lighthouse mobile throttling)
+
+| Chỉ số | Mục tiêu |
+|---|---|
+| LCP (ảnh ô Combo) | ≤ 2,0 s |
+| INP | ≤ 150 ms |
+| CLS | ≤ 0,05 (skeleton Oven Bar cùng chiều cao) |
+| JS tải lần đầu trang `/` | ≤ 110 KB gzip |
+| Tổng ảnh màn hình đầu | ≤ 350 KB (AVIF/WebP qua `next/image`, `images.formats: ['image/avif','image/webp']`) |
+
+Kỹ thuật: Server Components mặc định; chỉ các phần tương tác là client; React Compiler; font chỉ subset `latin` + `vietnamese`; ảnh ô hero `preload`, các ảnh khác lazy; không nhúng bản đồ iframe (dùng link Google Maps).
+
+### 13.2 SEO & chia sẻ
+
+- `metadataBase: https://theheatpizza.vn`; title "THE HEAT PIZZA — Pan pizza kiểu Mỹ & BBQ sous-vide · Thăng Bình".
+- JSON-LD `Restaurant` (tên, địa chỉ, `areaServed`, `servesCuisine`, `hasMenu` lấy từ catalog, `potentialAction: OrderAction`), cập nhật `json-ld.tsx`.
+- `/m/[slug]` có `opengraph-image.tsx` riêng (ảnh món + giá + "Đặt lò tại theheatpizza.vn") → chia sẻ Facebook/Zalo đẹp.
+- `sitemap.ts`: `/`, `/m/*`, `/chinh-sach`.
+- Liên kết Google Business Profile ↔ website (xem `MARKETING.md`).
+
+### 13.3 PWA
+
+`app/manifest.ts` (tên, icon 192/512, `display: standalone`, `theme_color: #000000`, `start_url: /?src=pwa`) để khách quen và bếp "Thêm vào màn hình chính". Service worker/Web Push để giai đoạn 2 (Telegram đã đủ cho bếp).
+
+### 13.4 Giám sát & vận hành
+
+- `instrumentation.ts` → `onRequestError` gửi Telegram (giới hạn tần suất).
+- Log có cấu trúc (JSON) cho `placeOrder` (không log SĐT đầy đủ — che 4 số giữa).
+- Analytics sự kiện: `view_item`, `add_to_cart`, `begin_checkout`, `lookup_known`, `place_order`, `slot_full`, `cancel_order` (kèm `src`).
+- Sao lưu DB: dùng PITR của nhà cung cấp hoặc `pg_dump` hằng ngày (GitHub Action/cron VPS) vào kho riêng tư.
+
+---
+
+## 14. Chiến lược kiểm thử
+
+| Tầng | Công cụ | Phạm vi bắt buộc |
+|---|---|---|
+| Unit (thuần) | Vitest | `time` (offset +07:00, qua nửa đêm UTC, nhãn ngày) · `oven-status` (mọi `kind`, biên đúng giây `cutoffAt`, `bbq_only`) · `capacity` (combo tiêu 2 tài nguyên) · `pricing` (quà khi pickup, phí theo khu vực, freeship) · `order-status` (bảng chuyển trạng thái) · `prep` (**khớp chính xác Phụ lục B** + bất biến tổng = Σ mẻ) · `phone` |
+| Integration | Vitest + Postgres thật (Docker service trong CI) | `placeOrder`: idempotency, giữ suất; **đua tranh**: 10 request song song vào mẻ còn 3 suất → đúng 3 thành công; huỷ trả suất đúng một lần |
+| E2E | Playwright (iPhone 13, Pixel 7, Desktop Chrome) | Đặt combo + add-on + giao tận nhà; nhận tại Rêu có quà; mẻ kín → chuyển mẻ gợi ý; khách cũ (cookie) tự điền; Back của Android đóng sheet; admin đăng nhập → số liệu Bảng Chuẩn Bị đúng; axe 0 lỗi nghiêm trọng |
+| CI | GitHub Actions | `npm ci` → `eslint` → `next typegen && tsc --noEmit` → unit → integration → `next build` → e2e (trên build) |
+
+Đồng hồ trong test: luôn truyền `now` vào hàm domain; e2e dùng biến môi trường `TEST_NOW` (chỉ khi `NODE_ENV=test`) để cố định thời gian.
+
+---
+
+## 15. Lộ trình triển khai (Milestones cho Agent)
+
+Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc lập.
+
+### M0 — Dọn nền (≈ 1 ngày)
+- Xoá: café/gelato/fries/gallery/visit/reservation/hero carousel, `LanguageProvider`, `LanguageToggle`, `ThemeToggle`, script `themeInit`, `app/actions/reservation.ts`, ảnh không dùng (§2.3).
+- `data/copy.ts` (vi), `data/site.ts` mới (THE HEAT PIZZA, hotline, Zalo, Rêu, thông tin pháp lý placeholder).
+- `globals.css`: chỉ dark + token mới (§9.1). `layout.tsx`: `metadataBase` mới, `viewport-fit=cover`.
+- `next.config.ts`: `cacheComponents: true`, `reactCompiler: true`, `images.formats`, security headers.
+- Thêm phụ thuộc: `zod`, `drizzle-orm`, `postgres`, `jose`, `@node-rs/argon2`, `server-only`; dev: `drizzle-kit`, `babel-plugin-react-compiler` (bắt buộc cho `reactCompiler: true`), `vitest`, `@playwright/test`, `@axe-core/playwright`.
+- Scripts: `test`, `test:e2e`, `db:generate`, `db:migrate`, `db:seed`, `typecheck`. `.env.example`. Workflow CI.
+- **Chấp nhận:** trang `/` hiển thị placeholder tối; lint/typecheck/CI xanh.
+
+### M1 — Domain lõi thuần + test (≈ 1–2 ngày)
+- `lib/domain/*` theo §7 + test; Phụ lục B làm fixture.
+- **Chấp nhận:** coverage `lib/domain` ≥ 95%; test Prep khớp từng con số của §10.2.
+
+### M2 — DB & DAL (≈ 1–2 ngày)
+- Schema Drizzle §6, migration, seed Phụ lục A, `ensureBatches(from, days)` idempotent, DAL đọc catalog (`'use cache'` + tag) và lịch.
+- **Chấp nhận:** `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` trả đúng với dữ liệu seed.
+
+### M3 — Giao diện đặt món (≈ 3–4 ngày)
+- Sheet primitive (§9.9), Oven Bar (stream + poll), Brand strip, Bento Menu, Item Sheet, Cart store + Cart bar, Checkout Sheet (chưa nối server: dùng action giả), màn thành công, sheet "Vì sao đặt trước?".
+- **Chấp nhận:** đạt ngân sách §13.1 ở bản build; luồng UI đầy đủ trên iPhone 13/Pixel 7 trong Playwright; Back đóng sheet; reduced-motion hoạt động.
+
+### M4 — Đặt đơn thật (≈ 2 ngày)
+- `placeOrder`, `lookupCustomer` (+ cookie ghi nhớ), rate-limit, Telegram, `/o/[token]`, `cancelOrderByToken`, `/api/oven`.
+- **Chấp nhận:** test đua tranh pass; đơn xuất hiện trong DB + Telegram trong ≤ 3 s; tra SĐT từ thiết bị lạ **không** lộ mô tả nhà.
+
+### M5 — Kitchen Dashboard (≈ 3 ngày)
+- Auth (login, `proxy.ts`, `requireStaff`), 5 tab §10, Thêm đơn nhanh, bản in, wake lock, cron `daily` (tạo mẻ + gửi bảng tổng hợp).
+- **Chấp nhận:** với dữ liệu Phụ lục B, tab Chuẩn bị hiển thị đúng §10.2; thao tác hàng loạt đổi trạng thái đúng `canTransition`; shipper chỉ thấy tab Giao.
+
+### M6 — Thanh toán, SEO, PWA, hoàn thiện (≈ 2 ngày)
+- VietQR, webhook SePay, trả trước theo rủi ro, `/m/[slug]` + OG, JSON-LD, manifest, sitemap/robots, analytics + `?src=`, `/chinh-sach`, `instrumentation.ts`.
+- **Chấp nhận:** chuyển khoản thử → đơn tự `paid` + Telegram; Lighthouse mobile ≥ 95 Performance/100 Accessibility/100 SEO.
+
+### Giai đoạn 2 (sau ra mắt, theo dữ liệu thật)
+Suất muộn từ đế dự phòng · Danh sách chờ khi kín lò · Tồn kho theo ngày (`day_stock`) cho túi BBQ · Ship chung tuyến · Tem tích điểm & giới thiệu bạn · Zalo ZNS · Nhãn in dán hộp · Link bàn giao cho Rêu có token (xem không cần đăng nhập) · Báo cáo tuần (doanh thu, tỉ lệ lấp đầy lò, khách quay lại, hiệu quả từng `src`).
+
+---
+
+## 16. Quyết định cần chủ quán chốt (kèm mặc định)
+
+Agent dùng **mặc định** để không bị chặn; chủ quán thay số liệu thật trong seed/Cài đặt.
+
+| # | Câu hỏi | Mặc định đề xuất |
+|---|---|---|
+| 1 | Tên thương hiệu hiển thị: "THE HEAT PIZZA" hay "THE HEAT"? Quan hệ với nhà hàng 162 Nguyễn Thuật? | "THE HEAT PIZZA", logo hiện có |
+| 2 | Thực đơn & giá chính thức (2 pizza, 2 BBQ, combo, add-on) | Phụ lục A |
+| 3 | Bếp đặt ở đâu? Rêu chỉ là điểm nhận hay cũng là bếp? Địa chỉ Rêu? | Rêu là điểm nhận; địa chỉ để trống chờ điền |
+| 4 | Các mẻ trong ngày, giờ chốt, sức chứa mỗi mẻ (khay pizza / phần BBQ) | 17:00 · 18:00 · 19:00; chốt 15:30; 4 pizza + 4 BBQ mỗi mẻ |
+| 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | T4–CN; 3 ngày |
+| 6 | Danh sách Thôn/Khu phố, phí ship từng nơi, cách nhóm tuyến | Phụ lục A (placeholder) |
+| 7 | Chính sách thanh toán: COD cho tất cả? Khi nào bắt trả trước? | `risk_based` (khách từng bom hàng hoặc đơn ≥ 1.000.000đ) |
+| 8 | Định lượng (BOM): gram phô mai, pepperoni, trọng lượng túi sườn… | Phụ lục A |
+| 9 | Ai giao hàng (tự giao / shipper riêng)? Bán kính giao tối đa? | Shipper riêng, chỉ các khu vực trong danh sách |
+| 10 | Tài khoản ngân hàng cho VietQR; có dùng SePay không? | Có (M6) |
+| 11 | Hosting: Vercel Pro (~20 USD/tháng, ít vận hành) hay VPS (~150–300 nghìn/tháng, cần người vận hành)? | Vercel Pro + Neon |
+| 12 | Thông tin pháp lý footer (hộ kinh doanh, MST/ĐKKD, email) | Placeholder, chặn ra mắt nếu chưa có |
+| 13 | Ảnh chụp mới: Pizza Phô mai Bơ tỏi, BBQ #2, Combo, hũ sốt, chai cold brew Rêu | Dùng ảnh hiện có làm tạm |
+
+---
+
+## Phụ lục A — Seed data mẫu
+
+> Giá & định lượng là **giá trị giữ chỗ** để phát triển; chủ quán chốt ở §16.
+
+**Sản phẩm**
+
+| id | kind | Tên | Giá | uses_pan/bbq | Ảnh tạm |
+|---|---|---|---|---|---|
+| `combo-doi` | combo | Combo Đôi — 1 Pan Pizza + 1 BBQ | 289.000 | 1 / 1 | `menu/pan-bbq.jpg` |
+| `pepperoni-pan` | pizza | Pan Pizza Pepperoni | 159.000 | 1 / 0 | `pizza/346-American-Style-Pizza_carrousel03.jpg` |
+| `garlic-cheese-pan` | pizza | Pan Pizza Phô mai Bơ tỏi | 149.000 | 1 / 0 | `menu/pan-margherita.jpg` (tạm) |
+| `ribs-sv` | bbq | Sườn heo BBQ Sous-vide 24h | 169.000 | 0 / 1 | `menu/bbq-ribs.jpg` |
+| `bbq-2` | bbq | BBQ #2 (chủ quán đặt tên) | 149.000 | 0 / 1 | `menu/bbq-thigh.jpg` (tạm) |
+| `sauce-garlic-butter` | addon | Hũ Sốt Bơ Tỏi chấm viền bánh | 10.000 | 0 / 0 | `menu/sauce-cheddar.jpg` |
+| `sauce-bbq-smoky` | addon | Hũ Sốt BBQ khói | 10.000 | 0 / 0 | `menu/sauce-bbq.jpg` |
+| `cold-brew-reu` | addon (supplier `reu`) | Chai Cà phê ủ lạnh Rêu | 18.000 | 0 / 0 | `menu/cold-brew.jpg` |
+
+`combo-doi.combo_config` = pizza ∈ {`pepperoni-pan`, `garlic-cheese-pan`}, bbq ∈ {`ribs-sv`, `bbq-2`}. `upsell_ids` của mọi món chính = 3 add-on trên.
+
+**Nguyên liệu & định lượng**
+
+| Nguyên liệu (`id`) | Đơn vị | pepperoni-pan | garlic-cheese-pan | ribs-sv | bbq-2 | sauce-garlic-butter | sauce-bbq-smoky | cold-brew-reu |
+|---|---|---|---|---|---|---|---|---|
+| `pan-dough` Đế Pan đã ủ | đế | 1 | 1 | | | | | |
+| `mozzarella` | g | 180 | 180 | | | | | |
+| `pepperoni` | g | 60 | | | | | | |
+| `garlic-butter-base` Bơ tỏi phết | g | | 40 | | | | | |
+| `ribs-bag` Túi sườn sous-vide (500 g) | túi | | | 1 | | | | |
+| `bbq2-bag` Túi BBQ #2 | túi | | | | 1 | | | |
+| `jar-garlic-butter` Hũ sốt bơ tỏi | hũ | | | | | 1 | | |
+| `jar-bbq-smoky` Hũ sốt BBQ khói | hũ | | | | | | 1 | |
+| `pink-ginger` Gừng hồng muối | phần | 1 | 1 | 1 | 1 | | | |
+| `pizza-box` Hộp pizza | hộp | 1 | 1 | | | | | |
+| `bbq-tray` Khay BBQ | khay | | | 1 | 1 | | | |
+| `cold-brew-bottle` (storage `Rêu`) | chai | | | | | | | 1 |
+
+**Lịch mẫu:** T4–CN, mẻ `17:00/18:00/19:00`, `oven_lead_min = 20`, `cutoff_time = 15:30`, `cap_pan = 4`, `cap_bbq = 4`.
+
+**Khu vực & tuyến (placeholder)**
+
+| Tuyến | Khu vực | Phí ship |
+|---|---|---|
+| Tuyến Khu phố 2 | Khu phố 1, Khu phố 2, Khu phố 3 | 10.000 |
+| Tuyến Quốc lộ / Thị trấn | Thị trấn (trung tâm), Dọc Quốc lộ 1A | 10.000 / 15.000 |
+| Tuyến Thôn | Thôn A, Thôn B | 15.000 |
+
+**Điểm nhận:** Cà phê Rêu — quà `sauce-garlic-butter`.
+
+---
+
+## Phụ lục B — Bộ dữ liệu kiểm thử Prep (khớp ví dụ trong brief)
+
+Ngày phục vụ **Thứ Sáu 06/11/2026**, 12 đơn, không đơn nào bị huỷ.
+
+| # | Mẻ (giao) | Khách | Nhận | Khu vực/Tuyến | Món | Add-on | Thanh toán | Ghi chú |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 17:00 | Tuấn | Giao | KP2 / Tuyến KP2 | Combo (Pepperoni + Sườn) | Cold brew ×1 | COD | |
+| 2 | 17:00 | Lan | Giao | KP2 / Tuyến KP2 | Pepperoni | Sốt bơ tỏi ×1 | CK đã nhận | |
+| 3 | 17:00 | Huy | Giao | KP2 / Tuyến KP2 | Combo (Phô mai Bơ tỏi + Sườn) | | COD | |
+| 4 | 18:00 | Minh | Giao | Quốc lộ / Tuyến QL-TT | Pepperoni + Sườn | Cold brew ×1 | COD | |
+| 5 | 18:00 | Hoa | Giao | Thị trấn / Tuyến QL-TT | Phô mai Bơ tỏi | Sốt bơ tỏi ×1 | **CK chưa nhận** | |
+| 6 | 18:00 | Phúc | Giao | Quốc lộ / Tuyến QL-TT | Sườn | Sốt BBQ khói ×1 | COD | |
+| 7 | 18:00 | Vy | Giao | Thị trấn / Tuyến QL-TT | Phô mai Bơ tỏi | Sốt bơ tỏi ×1, Cold brew ×1 | COD | "Ít cay, dị ứng đậu phộng" |
+| 8 | 18:00 | Khánh | Rêu | — | Pepperoni | (quà sốt bơ tỏi) | COD | |
+| 9 | 18:00 | Ngọc | Giao | Thị trấn / Tuyến QL-TT | Sườn | Sốt BBQ khói ×1, Cold brew ×1 | **CK chưa nhận** | |
+| 10 | 19:00 | Dũng | Rêu | — | Phô mai Bơ tỏi | (quà sốt bơ tỏi) | COD | |
+| 11 | 19:00 | Trang | Giao | KP2 / Tuyến KP2 | Pepperoni | Sốt bơ tỏi ×1 | COD | |
+| 12 | 19:00 | Bảo | Rêu | — | Sườn | Sốt BBQ khói ×1 (quà sốt bơ tỏi) | COD | |
+
+**Kết quả mong đợi của `buildPrepReport`**
+
+| Chỉ số | Giá trị |
+|---|---|
+| Đơn | 12 |
+| Pizza | 9 (Pepperoni 5 · Phô mai Bơ tỏi 4) |
+| BBQ | 6 (Sườn 6) → `ribs-bag` 6 túi ≈ 3,0 kg |
+| Mozzarella / Pepperoni / Bơ tỏi phết | 1.620 g / 300 g / 160 g |
+| Hũ sốt bơ tỏi | 7 (4 bán · 3 tặng) |
+| Hũ sốt BBQ khói | 3 |
+| Gừng hồng | 15 phần |
+| Hộp pizza / Khay BBQ | 9 / 6 |
+| Cold brew Rêu | 4 chai (báo cáo đối soát `reu`: 4) |
+| Mẻ 17:00 (lò 16:40) | 3 Pizza + 2 BBQ · Tuyến KP2: Tuấn, Lan, Huy |
+| Mẻ 18:00 (lò 17:40) | 4 Pizza + 3 BBQ · Tuyến QL-TT: Minh, Hoa, Phúc, Vy, Ngọc · Rêu: Khánh |
+| Mẻ 19:00 (lò 18:40) | 2 Pizza + 1 BBQ · Tuyến KP2: Trang · Rêu: Dũng, Bảo |
+| Cảnh báo | `unpaid_transfer` #5, #9 · `allergy_note` #7 |
+| Bất biến | 3+4+2 = 9 pizza · 2+3+1 = 6 BBQ |
