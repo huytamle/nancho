@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.0 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó.
+> **Phiên bản:** 1.1 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.1:** ✅ Rêu vừa là **bếp** vừa là **điểm nhận** · ✅ Thực đơn & giá theo Phụ lục A là chính thức · Database mặc định đổi từ Neon sang **Supabase (Postgres, Singapore)**.
 > **Ngôn ngữ:** Văn bản tiếng Việt, tên code/biến/bảng bằng tiếng Anh.
 > **Tài liệu kèm theo:** [`docs/MARKETING.md`](./MARKETING.md) — chiến lược marketing đa kênh tại thị trấn.
 
@@ -155,7 +156,7 @@
 | Quà tặng | `isGift` | Dòng giá 0đ do hệ thống tự thêm (VD: nhận tại Rêu → tặng 1 hũ Sốt Bơ Tỏi) |
 | Khu vực | `Zone` | Thôn/Khu phố khách chọn trong dropdown; có phí ship riêng |
 | Tuyến | `Route` | Nhóm khu vực mà shipper giao chung một chuyến (VD "Tuyến Quốc lộ / Thị trấn") |
-| Điểm nhận | `PickupPoint` | Nơi khách tự đến lấy (mặc định: quán cà phê Rêu) |
+| Bếp / Điểm nhận | `PickupPoint` | ✅ **Rêu vừa là bếp vừa là điểm nhận**: bánh ra lò là có ngay tại quầy, không mất thời gian vận chuyển; mọi tuyến giao xuất phát từ Rêu. Bảng `pickup_points` vẫn giữ để sau này mở thêm điểm nhận |
 | Định lượng | `RecipeLine` (BOM) | Món X tiêu tốn bao nhiêu nguyên liệu Y (1 đế, 180 g mozzarella, 1 phần gừng, 1 hộp…) |
 | Bảng Tổng Hợp Chuẩn Bị | `PrepReport` | Tổng hợp nguyên liệu và chia theo mẻ/tuyến cho một ngày |
 | Kênh | `channel` | Đơn đến từ `web`, `phone`, `zalo`, `walkin` (quầy Rêu), sau này `grab`/`shopee` — **mọi kênh đều trừ suất chung** |
@@ -175,10 +176,10 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 7. **Khan hiếm thật, không giả.** "Còn 1 suất 🔥" lấy từ DB. Không bao giờ hiển thị con số bịa — vừa là đạo đức, vừa tránh rủi ro pháp lý về quảng cáo gây nhầm lẫn.
 8. **Ghim vị trí GPS** (tuỳ chọn) bên cạnh "Mô tả nhà": nông thôn ít số nhà, shipper mở thẳng Google Maps.
 9. **Chống mất đơn trên mạng 3G/4G chập chờn:** `idempotencyKey` cho mỗi lần bấm "Đặt", nút có trạng thái chờ, và **phương án dự phòng** (gọi/Zalo kèm nội dung đơn đã copy sẵn) nếu server lỗi.
-10. **Prep Calculator theo BOM**: không chỉ "9 đế", mà còn 1.620 g mozzarella, 7 hũ sốt bơ tỏi (4 bán + 3 tặng), 15 phần gừng hồng, 9 hộp pizza, 6 khay BBQ, 4 chai cold brew phải lấy từ Rêu. Có trạng thái "số liệu tạm tính" khi chưa tới giờ chốt.
+10. **Prep Calculator theo BOM**: không chỉ "9 đế", mà còn 1.620 g mozzarella, 7 hũ sốt bơ tỏi (4 bán + 3 tặng), 15 phần gừng hồng, 9 hộp pizza, 6 khay BBQ, 4 chai cold brew lấy từ tủ quầy Rêu. Có trạng thái "số liệu tạm tính" khi chưa tới giờ chốt.
 11. **Trả trước theo rủi ro** qua VietQR: khách mới/khách quen đặt COD bình thường; khách từng "bom" bị yêu cầu chuyển khoản. Giảm bom hàng mà không gây ma sát cho số đông.
 12. **Đơn từ mọi kênh trừ chung một kho suất**: chủ quán có form "Thêm đơn nhanh" trong dashboard cho đơn gọi điện/Zalo/khách tại quầy Rêu → không bao giờ overbook lò.
-13. **Danh sách bàn giao cho Rêu & đối soát đối tác**: Rêu là điểm nhận và nhà cung cấp cold brew → dashboard có danh sách khách nhận tại Rêu từng mẻ (tên, mã đơn, số tiền cần thu) và báo cáo số chai cold brew để đối soát.
+13. **Danh sách khách lấy tại quầy & đối soát với Rêu**: Rêu là bếp, điểm nhận và nơi cung cấp cold brew → khi bếp đang bận đút lò, nhân viên quầy café vẫn giao bánh đúng người nhờ danh sách khách lấy tại quầy từng mẻ (số thứ tự, tên, số tiền cần thu); kèm báo cáo số chai cold brew bán qua app để đối soát nếu The Heat Pizza và Rêu tách sổ sách.
 14. *(Giai đoạn 2)* **Suất muộn & danh sách chờ**: chủ quán chuẩn bị thêm vài đế dự phòng; sau giờ chốt bán "suất muộn"; khi kín lò, khách để lại SĐT để được báo khi có đơn huỷ.
 15. *(Giai đoạn 2)* **"Ship chung tuyến"**: hàng xóm đặt cùng tuyến + cùng mẻ được giảm phí ship — vừa lan truyền, vừa giảm chi phí giao (xem `MARKETING.md`).
 
@@ -208,7 +209,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
                             │ Drizzle (postgres.js)    │ after(): notify       │ webhook
                     ┌───────▼────────┐        ┌────────▼────────┐     ┌────────▼────────┐
                     │ PostgreSQL     │        │ Telegram Bot API│     │ SePay (đối soát │
-                    │ (Neon SG / VPS)│        │ nhóm "Bếp"      │     │ chuyển khoản)   │
+                    │ (Supabase SG)  │        │ nhóm "Bếp"      │     │ chuyển khoản)   │
                     └────────────────┘        └─────────────────┘     └─────────────────┘
                                    VietQR: ảnh QR tạo từ img.vietqr.io (không cần API key)
 ```
@@ -220,8 +221,8 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | Framework | **Next.js 16.3** (đã có), React 19.2, `cacheComponents: true`, `reactCompiler: true` | PPR: shell tĩnh tức thì + phần động stream vào |
 | Style | **Tailwind CSS 4** (đã có), CSS variables | Không thêm UI kit nặng |
 | Ngôn ngữ | TypeScript strict | |
-| DB | **PostgreSQL** — mặc định **Neon**, region `aws-ap-southeast-1` (Singapore) | Gần VN (~30–50 ms). Có thể thay bằng Postgres trên VPS mà không đổi code |
-| ORM / driver | **Drizzle ORM** + **`postgres` (postgres.js)** | Type-safe, migration bằng SQL thuần, chạy được cả Neon (pooled URL, `prepare: false`) lẫn Postgres tự host. Cần transaction thật cho giữ suất |
+| DB | **PostgreSQL trên Supabase**, region Singapore (`ap-southeast-1`) | Gần VN (~30–50 ms); có Table Editor để chủ quán xem/sửa dữ liệu, sao lưu hằng ngày (gói Pro), Realtime dùng được sau này. **Chỉ dùng phần Postgres**: không dùng `supabase-js` trên trình duyệt, không dùng Supabase Auth. Có thể thay bằng Neon hoặc Postgres trên VPS mà không đổi code |
+| ORM / driver | **Drizzle ORM** + **`postgres` (postgres.js)** | Type-safe, migration bằng SQL thuần. Trên Vercel kết nối qua **Supavisor transaction pooler** (cổng 6543) với `prepare: false`; `drizzle-kit migrate` dùng kết nối trực tiếp/session (`DIRECT_URL`). Cần transaction thật cho giữ suất |
 | Validate | **Zod 4** | Dùng chung schema cho client (gợi ý lỗi) và server (bắt buộc) |
 | Auth admin | Phiên **JWT ký bằng `jose`** trong cookie httpOnly + PIN băm bằng **`@node-rs/argon2`** | Theo hướng dẫn "Stateless Sessions" trong `02-guides/authentication.md`; 1–3 nhân viên không cần dịch vụ auth bên ngoài |
 | Rate limit | **Bảng Postgres** (fixed window) | Lưu lượng thị trấn nhỏ; bớt một nhà cung cấp (Upstash) |
@@ -334,7 +335,8 @@ docs/BLUEPRINT.md  docs/MARKETING.md
 
 | Biến | Bắt buộc | Mô tả |
 |---|---|---|
-| `DATABASE_URL` | ✅ | Postgres (Neon: dùng URL *pooled*) |
+| `DATABASE_URL` | ✅ | Supabase **transaction pooler** (cổng 6543) — dùng cho app |
+| `DIRECT_URL` | ✅ | Supabase kết nối trực tiếp/session pooler (cổng 5432) — chỉ dùng cho migration |
 | `SESSION_SECRET` | ✅ | ≥ 32 byte, ký JWT phiên admin |
 | `CUSTOMER_COOKIE_SECRET` | ✅ | Ký HMAC cookie "ghi nhớ khách" |
 | `NEXT_PUBLIC_SITE_URL` | ✅ | `https://theheatpizza.vn` |
@@ -385,7 +387,7 @@ staff        settings        rate_limits        (GĐ2: waitlist, day_stock)
 | `is_available` | bool | Công tắc nhanh "Hết hôm nay" |
 | `sort` | smallint | |
 
-**`ingredients`**: `id` text PK (`pan-dough`), `label` ("Đế Pan đã ủ"), `unit` (`đế·túi·g·hũ·phần·hộp·khay·chai`), `unit_weight_g` int null (túi sườn 500 → hiển thị ≈ kg), `storage` (`tủ đông·tủ mát·kệ·Rêu`), `sort`.
+**`ingredients`**: `id` text PK (`pan-dough`), `label` ("Đế Pan đã ủ"), `unit` (`đế·túi·g·hũ·phần·hộp·khay·chai`), `unit_weight_g` int null (túi sườn 500 → hiển thị ≈ kg), `storage` (`tủ đông·tủ mát·kệ·quầy Rêu`), `sort`.
 
 **`recipe_lines`**: (`product_id`, `ingredient_id`) PK, `qty` numeric(10,2). Combo **không** có recipe riêng — được "nổ" thành các món thành phần theo lựa chọn khi tính Prep.
 
@@ -998,7 +1000,7 @@ Tương phản ≥ 4.5:1 (đã kiểm tra `--secondary` trên `--bg`); mọi ả
 │ ☐ Hũ Sốt BBQ khói ............. 3 hũ          │
 │ ☐ Gừng hồng muối .............. 15 phần       │
 │ ☐ Hộp pizza / Khay BBQ ........ 9 / 6         │
-│ ☐ Cold brew Rêu (lấy từ Rêu) .. 4 chai        │
+│ ☐ Cold brew Rêu (tủ quầy) ..... 4 chai        │
 ├───────────────────────────────────────────────┤
 │ CHIA THEO CA NƯỚNG                             │
 │ ▸ Mẻ 16:40 → Giao 17:00 · 3 Pizza + 2 BBQ     │
@@ -1044,7 +1046,7 @@ Theo từng mẻ → từng tuyến: danh sách điểm giao (thứ tự kéo-th
   3) #03 Huy … — THU 299.000đ
   ```
 - **"Bắt đầu giao tuyến"** → các đơn chuyển `delivering`.
-- **Danh sách bàn giao cho Rêu** (đơn nhận tại Rêu của mẻ: số thứ tự, tên, tiền cần thu) — có nút Copy để gửi nhân viên Rêu.
+- **Danh sách khách lấy tại quầy Rêu** (đơn nhận tại chỗ của mẻ: số thứ tự, tên, tiền cần thu) — có nút Copy/In cho nhân viên quầy café. Link Google Maps của tuyến lấy Rêu làm điểm xuất phát.
 
 ### 10.6 Tab "Cài đặt" (chỉ `owner`)
 
@@ -1108,6 +1110,7 @@ Gửi trong `after()` để không làm chậm phản hồi cho khách; lỗi g�
 - Mọi Server Action: zod + kiểm tra quyền + không tin dữ liệu client (theo `02-guides/data-security.md`). Dùng `import 'server-only'` cho `lib/server/*`.
 - Rate-limit bảng Postgres: `lookup`, `order`, `login`, `cancel`. Honeypot + thời gian điền tối thiểu. Cloudflare Turnstile chỉ thêm khi thấy lạm dụng.
 - Cookie: httpOnly, Secure, `SameSite=Lax`. Header bảo mật trong `next.config.ts` (`X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy: geolocation=(self)`), CSP cơ bản theo `02-guides/content-security-policy.md`.
+- **Supabase:** bật **RLS cho mọi bảng và không tạo policy nào** → Data API công khai của Supabase (dùng anon key) không đọc/ghi được gì; app kết nối Postgres trực tiếp bằng role chủ bảng nên không bị ảnh hưởng. Không đưa `anon`/`service_role` key vào code client. Mật khẩu DB chỉ nằm trong biến môi trường (Vercel/`.env.local`), không bao giờ commit hay dán vào chat.
 - `/admin/*`, `/o/*`: `noindex` + `disallow` trong `robots.ts`.
 - Token theo dõi đơn ngẫu nhiên 128-bit; mã đơn ngắn (`TH-0611-12`) **không** đủ để xem đơn.
 
@@ -1191,7 +1194,8 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** coverage `lib/domain` ≥ 95%; test Prep khớp từng con số của §10.2.
 
 ### M2 — DB & DAL (≈ 1–2 ngày)
-- Schema Drizzle §6, migration, seed Phụ lục A, `ensureBatches(from, days)` idempotent, DAL đọc catalog (`'use cache'` + tag) và lịch.
+- Chủ quán tạo dự án Supabase (region Singapore) và nhập `DATABASE_URL`/`DIRECT_URL` vào biến môi trường; Agent không cần mật khẩu trong chat.
+- Schema Drizzle §6, migration (kèm bật RLS cho mọi bảng), seed Phụ lục A, `ensureBatches(from, days)` idempotent, DAL đọc catalog (`'use cache'` + tag) và lịch.
 - **Chấp nhận:** `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` trả đúng với dữ liệu seed.
 
 ### M3 — Giao diện đặt món (≈ 3–4 ngày)
@@ -1222,8 +1226,8 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | # | Câu hỏi | Mặc định đề xuất |
 |---|---|---|
 | 1 | Tên thương hiệu hiển thị: "THE HEAT PIZZA" hay "THE HEAT"? Quan hệ với nhà hàng 162 Nguyễn Thuật? | "THE HEAT PIZZA", logo hiện có |
-| 2 | Thực đơn & giá chính thức (2 pizza, 2 BBQ, combo, add-on) | Phụ lục A |
-| 3 | Bếp đặt ở đâu? Rêu chỉ là điểm nhận hay cũng là bếp? Địa chỉ Rêu? | Rêu là điểm nhận; địa chỉ để trống chờ điền |
+| 2 | Thực đơn & giá chính thức (2 pizza, 2 BBQ, combo, add-on) | ✅ **Đã chốt:** giữ nguyên Phụ lục A |
+| 3 | Bếp đặt ở đâu? Rêu chỉ là điểm nhận hay cũng là bếp? Địa chỉ Rêu? | ✅ **Đã chốt:** Rêu là bếp + điểm nhận. ⏳ Còn thiếu: địa chỉ & toạ độ Rêu (dùng cho footer pháp lý, bản đồ, điểm xuất phát tuyến giao) |
 | 4 | Các mẻ trong ngày, giờ chốt, sức chứa mỗi mẻ (khay pizza / phần BBQ) | 17:00 · 18:00 · 19:00; chốt 15:30; 4 pizza + 4 BBQ mỗi mẻ |
 | 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | T4–CN; 3 ngày |
 | 6 | Danh sách Thôn/Khu phố, phí ship từng nơi, cách nhóm tuyến | Phụ lục A (placeholder) |
@@ -1231,7 +1235,7 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 8 | Định lượng (BOM): gram phô mai, pepperoni, trọng lượng túi sườn… | Phụ lục A |
 | 9 | Ai giao hàng (tự giao / shipper riêng)? Bán kính giao tối đa? | Shipper riêng, chỉ các khu vực trong danh sách |
 | 10 | Tài khoản ngân hàng cho VietQR; có dùng SePay không? | Có (M6) |
-| 11 | Hosting: Vercel Pro (~20 USD/tháng, ít vận hành) hay VPS (~150–300 nghìn/tháng, cần người vận hành)? | Vercel Pro + Neon |
+| 11 | Hosting: Vercel Pro (~20 USD/tháng, ít vận hành) hay VPS (~150–300 nghìn/tháng, cần người vận hành)? | Vercel Pro + **Supabase** (gói Free khi phát triển; **Pro ~25 USD/tháng khi chạy thật** vì gói Free tạm dừng dự án sau 7 ngày không hoạt động và không có sao lưu tự động) |
 | 12 | Thông tin pháp lý footer (hộ kinh doanh, MST/ĐKKD, email) | Placeholder, chặn ra mắt nếu chưa có |
 | 13 | Ảnh chụp mới: Pizza Phô mai Bơ tỏi, BBQ #2, Combo, hũ sốt, chai cold brew Rêu | Dùng ảnh hiện có làm tạm |
 
@@ -1271,7 +1275,7 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | `pink-ginger` Gừng hồng muối | phần | 1 | 1 | 1 | 1 | | | |
 | `pizza-box` Hộp pizza | hộp | 1 | 1 | | | | | |
 | `bbq-tray` Khay BBQ | khay | | | 1 | 1 | | | |
-| `cold-brew-bottle` (storage `Rêu`) | chai | | | | | | | 1 |
+| `cold-brew-bottle` (storage `quầy Rêu`) | chai | | | | | | | 1 |
 
 **Lịch mẫu:** T4–CN, mẻ `17:00/18:00/19:00`, `oven_lead_min = 20`, `cutoff_time = 15:30`, `cap_pan = 4`, `cap_bbq = 4`.
 
@@ -1283,7 +1287,7 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | Tuyến Quốc lộ / Thị trấn | Thị trấn (trung tâm), Dọc Quốc lộ 1A | 10.000 / 15.000 |
 | Tuyến Thôn | Thôn A, Thôn B | 15.000 |
 
-**Điểm nhận:** Cà phê Rêu — quà `sauce-garlic-butter`.
+**Bếp & điểm nhận:** Cà phê Rêu (địa chỉ chờ chủ quán điền) — quà khi tự đến lấy: `sauce-garlic-butter`.
 
 ---
 
