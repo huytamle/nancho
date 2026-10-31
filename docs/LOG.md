@@ -63,7 +63,7 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 ## Câu hỏi đang treo cho chủ quán
 
 1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
-2. **Region Supabase:** biến `DATABASE_URL` của môi trường đang trỏ `aws-0-ap-south-1` (Mumbai), Blueprint chọn `ap-southeast-1` (Singapore, gần VN hơn ~30–50 ms) và `/chinh-sach` ghi "Singapore" → xác nhận/đổi project hoặc sửa câu trong chính sách.
+2. ✅ (31/10/2026) **Supabase ở Mumbai** (`ap-south-1`) — chủ quán chốt giữ; `/chinh-sach` đã ghi "Ấn Độ (Mumbai)". Cân nhắc đổi region function Vercel `sin1` → `bom1` (`vercel.json`) cho gần DB (mỗi truy vấn sin1↔Mumbai ≈ 60 ms khứ hồi).
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
 ## M2 — đã làm

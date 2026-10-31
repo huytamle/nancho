@@ -226,7 +226,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | Framework | **Next.js 16.3** (đã có), React 19.2, `cacheComponents: true`, `reactCompiler: true` | PPR: shell tĩnh tức thì + phần động stream vào |
 | Style | **Tailwind CSS 4** (đã có), CSS variables | Không thêm UI kit nặng |
 | Ngôn ngữ | TypeScript strict | |
-| DB | **PostgreSQL trên Supabase**, region Singapore (`ap-southeast-1`) | Gần VN (~30–50 ms); có Table Editor để chủ quán xem/sửa dữ liệu, sao lưu hằng ngày (gói Pro), Realtime dùng được sau này. **Chỉ dùng phần Postgres**: không dùng `supabase-js` trên trình duyệt, không dùng Supabase Auth. Có thể thay bằng Neon hoặc Postgres trên VPS mà không đổi code |
+| DB | **PostgreSQL trên Supabase**, region ~~Singapore~~ **Mumbai (`ap-south-1`)** — chủ quán đã tạo, chốt 31/10/2026 |  có Table Editor để chủ quán xem/sửa dữ liệu, sao lưu hằng ngày (gói Pro), Realtime dùng được sau này. **Chỉ dùng phần Postgres**: không dùng `supabase-js` trên trình duyệt, không dùng Supabase Auth. Có thể thay bằng Neon hoặc Postgres trên VPS mà không đổi code |
 | ORM / driver | **Drizzle ORM** + **`postgres` (postgres.js)** | Type-safe, migration bằng SQL thuần. Trên Vercel kết nối qua **Supavisor transaction pooler** (cổng 6543) với `prepare: false`; `drizzle-kit migrate` dùng kết nối trực tiếp/session (`DIRECT_URL`). Cần transaction thật cho giữ suất |
 | Validate | **Zod 4** | Dùng chung schema cho client (gợi ý lỗi) và server (bắt buộc) |
 | Auth admin | Phiên **JWT ký bằng `jose`** trong cookie httpOnly + PIN băm bằng **`@node-rs/argon2`** | Theo hướng dẫn "Stateless Sessions" trong `02-guides/authentication.md`; 1–3 nhân viên không cần dịch vụ auth bên ngoài |

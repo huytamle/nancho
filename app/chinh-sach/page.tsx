@@ -89,7 +89,7 @@ export default function PolicyPage() {
           <Section id="luu-tru" title="3. Lưu ở đâu, bao lâu">
             <ul>
               <li>
-                Dữ liệu đơn lưu trên máy chủ cơ sở dữ liệu tại <strong>Singapore</strong> (gần Việt Nam nhất), truy cập có mật khẩu, chỉ chủ quán và nhân viên bếp/giao hàng được xem.
+                Dữ liệu đơn lưu trên máy chủ cơ sở dữ liệu tại <strong>Ấn Độ (Mumbai)</strong> của nhà cung cấp Supabase, truy cập có mật khẩu, chỉ chủ quán và nhân viên bếp/giao hàng được xem.
               </li>
               <li>
                 Mô tả nhà và vị trí trên đơn được <strong>tự động xoá sau {ORDER_ADDRESS_RETENTION_DAYS} ngày</strong>. Nếu bạn bật &quot;Ghi nhớ thông tin&quot;, địa chỉ được giữ để lần sau đặt nhanh — đến khi bạn yêu cầu xoá.
