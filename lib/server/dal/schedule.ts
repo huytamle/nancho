@@ -1,6 +1,6 @@
 import "server-only";
 import { asc, between, eq } from "drizzle-orm";
-import { computeOvenStatus, type OvenStatus } from "@/lib/domain/oven-status";
+import { computeOvenStatus, upcomingSlots, type OvenSnapshot, type OvenStatus } from "@/lib/domain/oven-status";
 import { addDays, vnDateOf, vnInstant, vnWeekday, type ISODate } from "@/lib/domain/time";
 import type { ServiceDay } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
@@ -70,8 +70,22 @@ export async function loadServiceDays(from: ISODate, to: ISODate, db: Executor =
 
 /** Trạng thái Oven Bar cho hôm nay + `daysAhead` ngày tới. Động — không cache (§5.3). */
 export async function getOvenStatus(now: Date, db: Executor = getDb()): Promise<OvenStatus> {
-  const { ordering } = await loadSettings(db);
+  return (await getOvenSnapshot(now, db)).status;
+}
+
+/** Dữ liệu cho Oven Bar + chọn mẻ phía client (`GET /api/oven`, §8.2). */
+export async function getOvenSnapshot(now: Date, db: Executor = getDb()): Promise<OvenSnapshot> {
+  const { ordering, shipping } = await loadSettings(db);
   const today = vnDateOf(now);
   const days = await loadServiceDays(today, addDays(today, ordering.daysAhead), db);
-  return computeOvenStatus({ now, days, settings: ordering });
+  return {
+    serverNow: now.toISOString(),
+    status: computeOvenStatus({ now, days, settings: ordering }),
+    days: upcomingSlots({ now, days, settings: ordering }),
+    rules: {
+      maxQtyPerLine: ordering.maxQtyPerLine,
+      freeShipFrom: shipping.freeShipFrom,
+      deliveryWindowMin: ordering.deliveryWindowMin,
+    },
+  };
 }

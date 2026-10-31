@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPhone, maskName, normalizePhone } from "@/lib/domain/phone";
+import { formatPhone, formatPhoneInput, maskName, normalizePhone } from "@/lib/domain/phone";
 
 describe("normalizePhone", () => {
   it("chấp nhận các cách gõ thường gặp", () => {
@@ -30,5 +30,20 @@ describe("maskName", () => {
   it("lấy tên gọi", () => {
     expect(maskName("Nguyễn Văn Tuấn")).toBe("Tuấn");
     expect(maskName("  Lan ")).toBe("Lan");
+  });
+});
+
+describe("formatPhoneInput", () => {
+  it("nhóm số khi gõ, bỏ ký tự lạ, tối đa 10 số", () => {
+    expect(formatPhoneInput("")).toBe("");
+    expect(formatPhoneInput("091")).toBe("091");
+    expect(formatPhoneInput("09123")).toBe("0912 3");
+    expect(formatPhoneInput("0912-345.678")).toBe("0912 345 678");
+    expect(formatPhoneInput("091234567899")).toBe("0912 345 678");
+  });
+
+  it("nhận dán +84 / 84", () => {
+    expect(formatPhoneInput("+84 912 345 678")).toBe("0912 345 678");
+    expect(formatPhoneInput("84912345678")).toBe("0912 345 678");
   });
 });

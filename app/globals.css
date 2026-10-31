@@ -64,6 +64,227 @@ body {
   color: var(--text);
 }
 
+/* ── Bottom sheet (§9.9) ── */
+html:has(dialog.sheet[open]) {
+  overflow: hidden;
+}
+
+.sheet {
+  position: fixed;
+  inset: auto 0 var(--kb, 0px) 0;
+  width: 100%;
+  max-width: 100%;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  overflow: visible;
+}
+
+.sheet::backdrop {
+  background: rgb(0 0 0 / 0);
+  backdrop-filter: blur(0);
+  transition:
+    background 280ms var(--ease-sheet),
+    backdrop-filter 280ms var(--ease-sheet);
+}
+
+.sheet[data-state="open"]::backdrop {
+  background: rgb(0 0 0 / 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.sheet-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(92dvh - var(--kb, 0px));
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  background: var(--surface);
+  box-shadow: 0 -12px 48px rgb(0 0 0 / 0.5);
+  transform: translateY(100%);
+  transition: transform 280ms var(--ease-sheet);
+  will-change: transform;
+}
+
+.sheet-tall {
+  height: calc(88dvh - var(--kb, 0px));
+}
+
+.sheet[data-state="open"] .sheet-panel {
+  transform: translateY(0);
+  transition-duration: 420ms;
+}
+
+@media (min-width: 1024px) {
+  .sheet {
+    inset: 0;
+    width: 480px;
+    height: fit-content;
+    margin: auto;
+  }
+
+  .sheet-panel {
+    max-height: 86vh;
+    border-radius: var(--radius-sheet);
+    transform: translateY(24px);
+    opacity: 0;
+    transition:
+      transform 280ms var(--ease-sheet),
+      opacity 200ms ease;
+  }
+
+  .sheet-tall {
+    height: min(760px, 86vh);
+  }
+
+  .sheet[data-state="open"] .sheet-panel {
+    opacity: 1;
+  }
+}
+
+/* ── Oven Bar (§9.3): mở rộng ↔ thu gọn bằng grid-template-rows ── */
+.oven-more {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 240ms var(--ease-out);
+}
+
+.oven-more > div {
+  overflow: hidden;
+}
+
+.oven-mini {
+  display: none;
+}
+
+.oven-bar[data-collapsed] .oven-more {
+  grid-template-rows: 0fr;
+}
+
+.oven-bar[data-collapsed] .oven-full {
+  display: none;
+}
+
+.oven-bar[data-collapsed] .oven-mini {
+  display: inline;
+}
+
+.oven-bar[data-collapsed] button.oven-mini {
+  display: inline-flex;
+  align-items: center;
+}
+
+.live-dot {
+  animation: breathe 2s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--live) 0%, transparent);
+  }
+}
+
+/* ── Vi tương tác ── */
+.chip:active {
+  transform: scale(0.97);
+}
+
+.bump {
+  animation: bump 320ms var(--ease-out);
+}
+
+@keyframes bump {
+  40% {
+    transform: scale(1.03);
+  }
+}
+
+.cart-bar-in {
+  animation: rise 280ms var(--ease-out);
+}
+
+.toast-in {
+  animation: rise 220ms var(--ease-out);
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+}
+
+.draw-check {
+  stroke-dasharray: 40;
+  stroke-dashoffset: 40;
+  animation: draw 400ms 120ms var(--ease-out) forwards;
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.collapse-rows {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 240ms var(--ease-out);
+}
+
+.collapse-rows[data-open] {
+  grid-template-rows: 1fr;
+}
+
+.collapse-rows > div {
+  overflow: hidden;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Trường nhập (§9.7) ── */
+.input {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  border-radius: var(--radius-field);
+  border: 1px solid transparent;
+  background-color: var(--elevated);
+  padding: 0 1rem;
+  font-size: 16px; /* < 16px làm iOS tự phóng to */
+  color: var(--text);
+  outline: none;
+  transition: border-color 150ms;
+}
+
+.input::placeholder {
+  color: var(--secondary);
+}
+
+.input:focus-visible {
+  border-color: var(--text);
+}
+
+.input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+select.input {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23a1a1a6' stroke-width='1.6'/%3E%3C/svg%3E");
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

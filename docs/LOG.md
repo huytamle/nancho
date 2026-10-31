@@ -20,8 +20,9 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | Tài liệu (Blueprint 1.1, Marketing) | ✅ trên `main` | `f185f2a`, `8014fff` |
 | **M0 — Dọn nền** | ✅ trên `main` | `1341efc` |
 | **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
-| **M2 — DB & DAL** | ✅ (xem commit M2) | — |
-| M3 — Giao diện đặt món | ⏭ **làm tiếp** | — |
+| **M2 — DB & DAL** | ✅ | `bf92fda` |
+| **M3 — Giao diện đặt món** | ✅ (xem commit M3) | — |
+| M4 — Đặt đơn thật | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -56,7 +57,7 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
 ## Câu hỏi đang treo cho chủ quán
 
-1. **Ngân sách JS §13.1:** runtime Next 16 + React 19 đã ≈ 139 KB gzip (chưa có code client nào) > 110 KB. Đề xuất: tổng ≤ 180 KB *hoặc* JS của app ≤ 40 KB.
+1. **Ngân sách JS §13.1:** runtime Next 16 + React 19 ≈ 139 KB gzip > 110 KB. Sau M3: tổng ≈ **170 KB** (app ≈ 31 KB) — đạt cả hai phương án đề xuất (tổng ≤ 180 KB / app ≤ 40 KB). Chờ chốt con số chính thức.
 2. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
@@ -76,6 +77,24 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Chủ quán vẫn **chưa tạo Supabase** → khi có: điền `.env.local`, chạy `npm run db:migrate && npm run db:seed`.
 - Cron `/api/cron/daily` (M4) gọi `ensureBatches(hôm nay, daysAhead + 1)`.
 
+## M3 — đã làm
+
+- **Trang `/`** (`app/page.tsx`): shell tĩnh `getCatalog()` + `<Suspense>` Oven Bar (`OvenBarServer` → `getOvenSnapshot(serverNow())`) + `<Suspense>` `StoreSheets` (useSearchParams). Build: `/` = Partial Prerender.
+- **Snapshot lò** (`OvenSnapshot` trong `lib/domain/oven-status.ts`): `{ serverNow, status, days: DaySlots[], rules }`. Domain mới: `upcomingSlots`, `pickSlot`/`suggestSlot` (capacity), `formatPhoneInput` (phone) — có test. DAL `getOvenSnapshot`; `GET /api/oven` (cache 10 s).
+- **Client stores** (`lib/client/`): `cart-store` (reducer thuần + localStorage `th_cart_v1`, giỏ hết hạn khi qua ngày, giữ thông tin khách), `oven-store` (offset đồng hồ, poll 30 s + visibility/focus, refresh khi chạm giờ chốt), `toast-store`, `use-clock` (bộ đếm 1 s/30 s dùng chung), `sheet-url` (pushState/back/replace). Catalog xuống client qua `StoreProvider` (Context).
+- **UI** (`components/ui/sheet.tsx` trên `<dialog>`, kéo để đóng, `--kb` bàn phím; `stepper`, `toaster`) và `components/store/*` đúng §5.5. Mẻ đang chọn = `pickSlot(days, cart.batchId, req)` tính lúc render (không effect).
+- **`placeOrder` giả** (`app/actions/order.ts`, hợp đồng ở `lib/order-contract.ts`): zod + catalog + `priceOrder` + kiểm tra suất trên snapshot → kết quả giả, không ghi DB. Production chỉ chạy khi `E2E=1`, ngược lại `server_error`. Client tự chờ đủ 3 s từ lúc mở sheet trước khi gửi (luật chống bot). Hợp đồng thêm `etaLabel`, `cutoffLabel`.
+- **Đồng hồ test:** `lib/server/clock.ts` `serverNow()` đọc `TEST_NOW` (dev, hoặc production khi `E2E=1`); `db:seed` cũng dùng → `TEST_NOW=2026-11-06T10:00:00+07:00 npm run db:seed` trước e2e. CI đã thêm.
+- **E2E** `e2e/order.spec.ts` (7 test × 3 thiết bị): Oven Bar, combo + add-on + giao, nhận tại Rêu + quà + chuyển khoản, Back đóng sheet, giỏ còn sau reload, link `?mon=` đóng bằng replace, hoàn tác, reduced-motion, axe ở trang + sheet. Tổng 33/33 xanh. Unit 86, int 14.
+- Đo (iPhone 13, không throttle): CLS 0 lúc tải, 0,005 sau khi cuộn thu gọn thanh lò (bù bằng margin-bottom qua ResizeObserver).
+
+## M4 — lưu ý từ M3
+
+- Thay thân `placeOrder` (giữ nguyên chữ ký & `PlaceOrderResult`): bỏ `stubEnabled`, `seq` ngẫu nhiên, `trackingPath: "/"` (màn thành công ẩn nút "Theo dõi đơn" khi path = "/").
+- `lookupCustomer` chưa có — ô SĐT chỉ định dạng/kiểm tra. `requiresPrepay` chưa khoá COD.
+- e2e "mẻ kín → chuyển mẻ gợi ý" cần ghi DB → làm ở M4 (UI banner `slot_full` + chip thay thế đã có).
+- Footer chưa link `/chinh-sach` (M6).
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
@@ -84,3 +103,5 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Chụp màn hình khi server cũ còn chạy sau khi build lại → CSS lệch, ảnh sai. Luôn dừng server trước khi build.
 - Đo JS: đọc `<script src>` trong `.next/server/app/index.html`, bỏ file `noModule` (polyfill).
 - `next dev` tự ghi lại khối đầu `AGENTS.md` — commit nguyên như vậy.
+- DB local: `DATABASE_URL=postgres://postgres:postgres@localhost:5433/heat` (int test: `…/heat_test`). `.env.local` để trống DB (chờ Supabase) → truyền biến khi chạy lệnh.
+- Script Playwright ngoài repo: `createRequire("/home/user/nancho/")("@playwright/test")` (gói `playwright` không resolve từ scratchpad).

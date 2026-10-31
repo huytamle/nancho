@@ -11,6 +11,7 @@ import {
   seedZones,
 } from "@/data/seed";
 import { vnDateOf } from "@/lib/domain/time";
+import { serverNow } from "@/lib/server/clock";
 import { closeDb, getDb, type Db } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { ensureBatches } from "@/lib/server/dal/schedule";
@@ -19,7 +20,7 @@ import { DEFAULT_APP_SETTINGS, loadSettings } from "@/lib/server/dal/settings";
 // Seed Phụ lục A (data/seed.ts — không chép dữ liệu ở đây). Chạy lại an toàn: chỉ thêm bản ghi còn thiếu,
 // không ghi đè chỉnh sửa của chủ quán. Chạy: `npm run db:seed` (cần DATABASE_URL).
 
-export async function seed(db: Db = getDb(), now = new Date()) {
+export async function seed(db: Db = getDb(), now = serverNow()) {
   await db.transaction(async (tx) => {
     await tx.insert(t.products).values(seedProducts).onConflictDoNothing();
     await tx.insert(t.ingredients).values(seedIngredients).onConflictDoNothing();

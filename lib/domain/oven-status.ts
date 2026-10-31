@@ -94,3 +94,23 @@ export function computeOvenStatus(input: { now: Date; days: ServiceDay[]; settin
     upcoming,
   };
 }
+
+export type DaySlots = { date: ISODate; label: string; slots: SlotView[] };
+
+/** Payload của `GET /api/oven` và Oven Bar stream (§8.2). */
+export type OvenSnapshot = {
+  serverNow: string;
+  status: OvenStatus;
+  days: DaySlots[];
+  rules: { maxQtyPerLine: number; freeShipFrom: number | null; deliveryWindowMin: number };
+};
+
+/** Các ngày còn mẻ đặt được (hôm nay … +daysAhead) kèm chip giờ — cho tab ngày & chọn mẻ. */
+export function upcomingSlots(input: { now: Date; days: ServiceDay[]; settings: Pick<OvenSettings, "fewThreshold"> }): DaySlots[] {
+  const today = vnDateOf(input.now);
+  return input.days
+    .filter((d) => d.date >= today && d.status === "open" && d.batches.length > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({ date: d.date, label: vnDayLabel(d.date, today), slots: slotsForDay(d, input.now, input.settings) }))
+    .filter((d) => d.slots.some((s) => s.level !== "closed"));
+}

@@ -3,15 +3,6 @@
 export const copy = {
   skip: "Bỏ qua tới nội dung",
 
-  store: {
-    kicker: "Nướng theo mẻ · Đặt trước mới làm",
-    title: "Pan pizza kiểu Mỹ & BBQ sous-vide",
-    comingSoon: "Lò sắp đỏ. Trang đặt món đang được hoàn thiện.",
-    callToOrder: "Đặt qua điện thoại",
-    zalo: "Nhắn Zalo",
-    dineInLink: "Café, gelato & đặt bàn tại quán",
-  },
-
   dineIn: {
     back: "Đặt pizza",
     menu: {
@@ -54,6 +45,166 @@ export const copy = {
     },
   },
 
+  store: {
+    tagline: "Pan pizza kiểu Mỹ & BBQ sous-vide",
+    kicker: "Nướng theo mẻ · Đặt trước mới làm",
+    whyButton: "Vì sao phải đặt trước?",
+    callToOrder: "Gọi quán",
+    zalo: "Nhắn Zalo",
+    dineInLink: "Café, gelato & đặt bàn tại quán",
+    menuTitle: "Thực đơn",
+    addonsTitle: "Thêm cho ngon",
+    howTo: ["Chọn món", "Chọn mẻ", "Nhận nóng hổi"],
+    howToLabel: "Cách đặt",
+    pickupAt: "Nhận tại",
+    openMaps: "Bản đồ",
+  },
+
+  oven: {
+    regionLabel: "Trạng thái lò",
+    tonight: "tối nay",
+    open: (day: string) => `Đang nhận đặt trước cho ${day}`,
+    cutoff: (batch: number, time: string) => `Chốt đơn mẻ ${batch} lúc ${time}`,
+    closingSoon: (batch: number) => `Sắp chốt đơn mẻ ${batch}`,
+    soldOut: "Tối nay đã kín lò",
+    afterCutoff: "Đã chốt sổ tối nay",
+    dayOff: "Hôm nay lò nghỉ",
+    openFor: (day: string) => `Đang nhận đặt cho ${day}`,
+    paused: "Tạm ngưng nhận đơn",
+    noDays: "Chưa mở đặt cho những ngày tới — gọi quán để hỏi nhé.",
+    pickDay: (day: string) => `Đặt cho ${day}`,
+    daysLabel: "Ngày nhận",
+    slotsLabel: "Giờ nhận",
+    pickedToast: (time: string) => `Đã chọn nhận lúc ${time}`,
+    collapsedCutoff: (time: string) => `Chốt ${time}`,
+    unavailable: "Chưa xem được lò lúc này — kéo lại trang hoặc gọi quán.",
+  },
+
+  slot: {
+    left: (n: number) => `Còn ${n} suất`,
+    bbqOnly: "Chỉ còn BBQ",
+    full: "Kín lò",
+    closed: "Đã chốt",
+  },
+
+  product: {
+    add: (name: string) => `Thêm ${name} vào đơn`,
+    open: (name: string) => `Xem ${name}`,
+    inCart: (n: number) => `${n} trong đơn`,
+    soldOutToday: "Hết hôm nay",
+    noRoom: (time: string) => `Hết mẻ ${time} · Xem mẻ khác`,
+    ginger: "Kèm gừng hồng",
+    gingerNote: "Kèm 1 phần Gừng hồng muối chống ngấy",
+    added: "Đã thêm",
+    undo: "Hoàn tác",
+  },
+
+  item: {
+    close: "Đóng",
+    extras: "Thêm cho ngon",
+    pickupAt: (time: string, day: string) => `Nhận lúc ${time} · ${day}`,
+    change: "Đổi",
+    qty: "Số lượng",
+    noRoom: (time: string, what: string) => `Mẻ ${time} hết ${what}`,
+    noPan: "khay pizza",
+    noBbq: "phần BBQ",
+    suggest: (time: string) => `Chọn ${time}?`,
+    noSlot: "Chưa có mẻ nào còn nhận",
+    addToOrder: "Thêm vào đơn",
+    soldOut: "Món này đã hết hôm nay",
+  },
+
+  stepper: {
+    dec: (name: string) => `Giảm số lượng ${name}`,
+    inc: (name: string) => `Tăng số lượng ${name}`,
+  },
+
+  cart: {
+    items: (n: number) => `${n} món`,
+    pickupAt: (time: string) => `Nhận ${time}`,
+    cta: "Đặt ngay",
+    open: "Mở đơn hàng",
+  },
+
+  checkout: {
+    title: "Chốt đơn",
+    close: "Đóng",
+    empty: "Đơn đang trống — chọn món trước nhé.",
+    suggest: "Gợi ý",
+    gift: "Tặng",
+    receiveAt: "Nhận lúc",
+    phone: "Số điện thoại",
+    name: "Tên",
+    namePlaceholder: "Tên để quán gọi",
+    fulfillment: "Cách nhận",
+    delivery: "Giao tận nhà",
+    pickup: (place: string) => `Ghé ${place} lấy`,
+    freeShip: "Free ship",
+    giftLine: (gift: string) => `+ Tặng ${gift}`,
+    zone: "Thôn/Khu phố",
+    zonePlaceholder: "Chọn khu vực",
+    address: "Mô tả nhà",
+    addressPlaceholder: "Màu nhà, cạnh tiệm gì, đối diện gì… VD: Nhà mái tôn xanh, cạnh tạp hoá Cô Ba",
+    pin: "Ghim vị trí hiện tại (giúp shipper)",
+    pinning: "Đang lấy vị trí…",
+    pinned: (m: number) => `Đã ghim · sai số ~${m} m`,
+    unpin: "Bỏ ghim",
+    payment: "Thanh toán",
+    cod: "Tiền mặt khi nhận",
+    transfer: "Chuyển khoản (mã QR)",
+    noteToggle: "+ Ghi chú cho bếp",
+    note: "Ghi chú cho bếp",
+    remember: "Ghi nhớ thông tin cho lần sau",
+    subtotal: "Tạm tính",
+    ship: "Ship",
+    submit: (time: string, total: string) => `Đặt lò ${time} · ${total}`,
+    pending: "Đang giữ suất…",
+    terms: (cutoff: string) => `Đặt hàng là đồng ý chính sách của quán · Huỷ miễn phí trước ${cutoff}`,
+    noRoom: (time: string) => `Mẻ ${time} không đủ chỗ cho cả đơn`,
+    slotGone: (time: string, why: "full" | "cutoff") =>
+      why === "full" ? `Mẻ ${time} vừa kín lò 😢` : `Mẻ ${time} vừa chốt sổ`,
+    pickAlternative: "Chạm để chuyển mẻ:",
+    unavailable: "Có món vừa hết — bỏ món đó ra rồi đặt lại nhé.",
+    paused: "Lò đang tạm ngưng nhận đơn. Gọi quán để được hỗ trợ.",
+    failed: "Chưa gửi được đơn.",
+    retry: "Thử lại",
+    invalid: "Kiểm tra lại vài chỗ bên trên giúp quán nhé.",
+    errors: {
+      phoneInvalid: "Số này có vẻ chưa đúng — số di động 10 chữ số, VD 0912 345 678.",
+      nameShort: "Cho quán xin tên (ít nhất 2 chữ).",
+      nameLong: "Tên tối đa 40 ký tự.",
+      zoneRequired: "Chọn Thôn/Khu phố để quán tính phí ship.",
+      addressShort: "Tả thêm chút để shipper dễ tìm (ít nhất 8 ký tự).",
+      addressLong: "Mô tả nhà tối đa 200 ký tự.",
+      noteLong: "Ghi chú tối đa 300 ký tự.",
+    },
+  },
+
+  success: {
+    title: (seq: number, time: string) => `Đơn #${seq} đã giữ chỗ ở mẻ ${time}`,
+    transferTitle: "Chuyển khoản để hoàn tất",
+    memo: "Nội dung",
+    amount: "Số tiền",
+    copyMemo: "Sao chép nội dung",
+    copied: "Đã sao chép",
+    track: "Theo dõi đơn",
+    zalo: "Nhắn Zalo cho quán",
+    cancelNote: (cutoff: string, day: string) => `Huỷ miễn phí trước ${cutoff} ${day}.`,
+    done: "Xong",
+  },
+
+  why: {
+    title: "Vì sao phải đặt trước?",
+    body: [
+      "Đế pan được ủ trong khay nhiều giờ trước khi nướng, sườn BBQ nấu sous-vide 24 giờ. Không làm sẵn hàng loạt được.",
+      "Lò nướng theo từng mẻ, mỗi mẻ chỉ vài khay. Đặt trước giúp bếp chuẩn bị đúng số đế, đúng số phần — bánh ra lò là tới tay bạn còn nóng.",
+      "Sau giờ chốt sổ, bếp bắt đầu chuẩn bị nguyên liệu cho tối đó. Bạn vẫn có thể đặt cho những ngày tới.",
+    ],
+    ok: "Đã hiểu",
+  },
+
+  toastRegion: "Thông báo",
+
   footer: {
     hotline: "Hotline",
     kitchen: "Bếp & điểm nhận",
@@ -63,3 +214,4 @@ export const copy = {
 } as const;
 
 export type ReservationErrorKey = keyof typeof copy.reservationForm.errors;
+export type CheckoutErrorKey = keyof typeof copy.checkout.errors;

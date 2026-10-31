@@ -730,6 +730,8 @@ const PlaceOrderInput = z.object({
 
 type PlaceOrderResult =
   | { ok: true; code: string; seq: number; trackingPath: string; readyLabel: string; dayLabel: string;
+      etaLabel: string;          // "khoảng 18:00–18:20" (giao) · "18:00 tại Cà phê Rêu" (nhận)
+      cutoffLabel: string;       // "15:30" — câu "Huỷ miễn phí trước …"
       total: number; status: "placed" | "confirmed";
       payment: { method: "cod" } | { method: "transfer"; qrUrl: string; memo: string; amount: number } }
   | { ok: false; reason: "invalid"; fieldErrors: Partial<Record<FieldKey, ErrorKey>> }
@@ -747,7 +749,7 @@ type PlaceOrderResult =
 |---|---|---|---|---|
 | `lookupCustomer` | Action | `{ phone }` | `{status:"new"} \| {status:"known"; greetingName; zoneId; zoneName; savedAddressToken; requiresPrepay} \| {status:"self"; name; zoneId; addressText; lat?; lng?}` | rate-limit §7.7 |
 | `cancelOrderByToken` | Action | `{ token, reason? }` | `{ok} \| {ok:false; reason:"too_late"\|"not_found"}` | token + `now < cutoff_at` |
-| `GET /api/oven?ngay=` | Route | — | `{ serverNow, status: OvenStatus }` | public, cache 10 s |
+| `GET /api/oven` | Route | — | `OvenSnapshot = { serverNow, status: OvenStatus, days: DaySlots[], rules: { maxQtyPerLine, freeShipFrom, deliveryWindowMin } }` — `days` = mọi ngày còn mẻ nhận (hôm nay … +daysAhead) kèm chip giờ, để tab ngày & chọn mẻ không cần gọi thêm | public, cache 10 s |
 | `login` / `logout` | Action | `{ staffId, pin }` | redirect | rate-limit 5/15 phút/IP |
 | `advanceOrders` | Action (admin) | `{ orderIds[], to }` | `{ updated }` | `requireStaff()` + `canTransition` |
 | `advanceBatch` | Action (admin) | `{ batchId, to: "baking"\|"ready" }` | | `requireStaff()` |
@@ -1195,7 +1197,7 @@ Kỹ thuật: Server Components mặc định; chỉ các phần tương tác l�
 | E2E | Playwright (iPhone 13, Pixel 7, Desktop Chrome) | Đặt combo + add-on + giao tận nhà; nhận tại Rêu có quà; mẻ kín → chuyển mẻ gợi ý; khách cũ (cookie) tự điền; Back của Android đóng sheet; admin đăng nhập → số liệu Bảng Chuẩn Bị đúng; axe 0 lỗi nghiêm trọng |
 | CI | GitHub Actions | `npm ci` → `eslint` → `next typegen && tsc --noEmit` → unit → integration → `next build` → e2e (trên build) |
 
-Đồng hồ trong test: luôn truyền `now` vào hàm domain; e2e dùng biến môi trường `TEST_NOW` (chỉ khi `NODE_ENV=test`) để cố định thời gian.
+Đồng hồ trong test: luôn truyền `now` vào hàm domain; server lấy giờ qua `serverNow()` (`lib/server/clock.ts`). `TEST_NOW` (ISO có offset) cố định mốc giờ — chỉ được nhận khi không phải production **hoặc** `E2E=1` (Playwright đặt cả hai cho `next start`; `db:seed` dùng cùng `TEST_NOW` để có mẻ quanh mốc đó). Mặc định e2e: Thứ Sáu 06/11/2026 10:00 giờ VN.
 
 ---
 
@@ -1224,9 +1226,10 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` trả đúng với dữ liệu seed.
 - Ghi chú triển khai: `ensureBatches` chỉ sinh mẻ cho ngày chưa có `service_days` → mẻ chủ quán sửa/xoá tay không bị tạo lại; ngày không có template không có bản ghi (= `day_off`). Seed chạy lại không ghi đè dữ liệu đã sửa. Mỗi DAL có hàm `load*(db)` thuần (test được) + bản `'use cache'` (`getCatalog`). Integration test: `npm run test:int` với `TEST_DATABASE_URL` (DB bị xoá sạch); CI dùng service `postgres:16`.
 
-### M3 — Giao diện đặt món (≈ 3–4 ngày)
+### M3 — Giao diện đặt món (≈ 3–4 ngày) ✅
 - Sheet primitive (§9.9), Oven Bar (stream + poll), Brand strip, Bento Menu, Item Sheet, Cart store + Cart bar, Checkout Sheet (chưa nối server: dùng action giả), màn thành công, sheet "Vì sao đặt trước?".
 - **Chấp nhận:** đạt ngân sách §13.1 ở bản build; luồng UI đầy đủ trên iPhone 13/Pixel 7 trong Playwright; Back đóng sheet; reduced-motion hoạt động.
+- Ghi chú triển khai: `GET /api/oven` làm luôn ở M3 (cần cho poll). `placeOrder` giả kiểm tra thật (zod, catalog, giá, suất đang còn) nhưng **không ghi DB/không giữ suất**; production trả `server_error` (khách thấy "Gọi quán/Nhắn Zalo") trừ khi `E2E=1` → **không ra mắt trước M4**. Client không tải zod (kiểm tra nhẹ trong `lib/order-contract.ts`, cùng mã lỗi). Add-on chọn trong Item Sheet = 1 phần cho cả dòng (không nhân theo số bánh). Đo bản build: JS trang `/` ≈ 170 KB gzip (framework ≈ 139 + app ≈ 31), CLS 0,005 kể cả khi thu gọn Oven Bar. Chưa làm: `?ngay=` (tab ngày giữ trong giỏ), sheet "Vì sao đặt trước?" không gắn URL, link `/chinh-sach` (M6), tra khách cũ (M4).
 
 ### M4 — Đặt đơn thật (≈ 2 ngày)
 - `placeOrder`, `lookupCustomer` (+ cookie ghi nhớ), rate-limit, Telegram, `/o/[token]`, `cancelOrderByToken`, `/api/oven`.

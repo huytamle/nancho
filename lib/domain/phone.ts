@@ -20,3 +20,11 @@ export function maskName(name: string): string {
   const parts = name.trim().split(/\s+/);
   return parts[parts.length - 1] ?? "";
 }
+
+/** Định dạng khi đang gõ: giữ chữ số, nhận dán "+84…", tối đa 10 số, nhóm "0912 345 678". */
+export function formatPhoneInput(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (raw.trim().startsWith("+84") || (digits.startsWith("84") && digits.length === 11)) digits = `0${digits.slice(2)}`;
+  digits = digits.slice(0, 10);
+  return [digits.slice(0, 4), digits.slice(4, 7), digits.slice(7)].filter(Boolean).join(" ");
+}

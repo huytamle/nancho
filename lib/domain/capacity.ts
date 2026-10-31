@@ -29,3 +29,28 @@ export function availabilityForProduct(
   const byBbq = product.usesBbq > 0 ? Math.floor(slot.remainingBbq / product.usesBbq) : Infinity;
   return { ok: true, maxQty: Math.min(byPan, byBbq) };
 }
+
+type PickableDay = { slots: Pick<SlotView, "batchId" | "remainingPan" | "remainingBbq" | "level">[] };
+
+/**
+ * Mẻ dùng cho đơn: giữ mẻ khách đã chọn nếu còn nhận; không thì mẻ sớm nhất vừa `req`,
+ * rồi mẻ sớm nhất còn nhận. Trả null khi không còn mẻ nào.
+ */
+export function pickSlot<D extends PickableDay>(days: D[], selectedId: number | null, req: Requirement): D["slots"][number] | null {
+  const all = days.flatMap((d) => d.slots).filter((s) => s.level !== "closed" && s.level !== "full");
+  return (
+    all.find((s) => s.batchId === selectedId) ??
+    all.find((s) => fits(req, s)) ??
+    all[0] ??
+    null
+  );
+}
+
+/** Mẻ gần nhất (khác `exceptId`) vừa `req` — để gợi ý "Chọn 19:00?". */
+export function suggestSlot<D extends PickableDay>(days: D[], req: Requirement, exceptId: number | null): D["slots"][number] | null {
+  return (
+    days
+      .flatMap((d) => d.slots)
+      .find((s) => s.batchId !== exceptId && s.level !== "closed" && fits(req, s)) ?? null
+  );
+}

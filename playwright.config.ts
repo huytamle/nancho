@@ -22,6 +22,8 @@ export default defineConfig({
   ],
   webServer: {
     command: `npm run start -- --port ${PORT}`,
+    // Mốc giờ cố định (Thứ Sáu 06/11/2026 10:00 VN) + bật placeOrder giả. DB phải seed với cùng TEST_NOW.
+    env: { E2E: "1", TEST_NOW: process.env.TEST_NOW ?? "2026-11-06T10:00:00+07:00" },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

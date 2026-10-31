@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeOvenStatus, slotsForDay } from "@/lib/domain/oven-status";
+import { computeOvenStatus, slotsForDay, upcomingSlots } from "@/lib/domain/oven-status";
 import { vnInstant, type ISODate } from "@/lib/domain/time";
 import type { Batch, ServiceDay } from "@/lib/domain/types";
 
@@ -166,5 +166,26 @@ describe("computeOvenStatus", () => {
   it("dùng giờ VN: 23:00 UTC ngày 05 đã là sáng 06 ở VN", () => {
     const s = status(new Date("2026-11-05T23:00:00Z"), week());
     expect(s).toMatchObject({ kind: "open", date: TODAY });
+  });
+});
+
+describe("upcomingSlots", () => {
+  it("bỏ ngày nghỉ/tạm ngưng/đã qua và ngày đã chốt hết; giữ nhãn ngày", () => {
+    const days = [
+      day("2026-11-05", [b("2026-11-05", "17:00")]),
+      day(TODAY, [b(TODAY, "17:00")]),
+      day("2026-11-07", [b("2026-11-07", "18:00"), b("2026-11-07", "17:00")]),
+      day("2026-11-08", [b("2026-11-08", "17:00")], { status: "paused" }),
+      day("2026-11-09", []),
+    ];
+    const morning = upcomingSlots({ now: vnInstant(TODAY, "10:00"), days, settings });
+    expect(morning.map((d) => [d.date, d.label])).toEqual([
+      [TODAY, "Tối nay"],
+      ["2026-11-07", "Mai"],
+    ]);
+    expect(morning[1].slots.map((s) => s.readyLabel)).toEqual(["17:00", "18:00"]);
+
+    const evening = upcomingSlots({ now: vnInstant(TODAY, "16:00"), days, settings });
+    expect(evening.map((d) => d.date)).toEqual(["2026-11-07"]);
   });
 });

@@ -7,10 +7,11 @@ async function expectNoSeriousA11yIssues(page: import("@playwright/test").Page) 
   expect(serious.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 }
 
-test("trang chủ hiển thị trang giữ chỗ tối", async ({ page }) => {
+test("trang chủ là app đặt món nền tối", async ({ page }) => {
   await page.goto("/");
   await expect(page).toHaveTitle(/THE HEAT PIZZA/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Pan pizza");
+  await expect(page.getByRole("button", { name: /Thêm Pan Pizza Pepperoni/ })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "vi");
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(bg).toBe("rgb(0, 0, 0)");
