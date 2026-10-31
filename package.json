@@ -16,8 +16,9 @@
     "test:e2e": "playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:seed": "node --env-file-if-exists=.env.local lib/server/db/seed.ts",
-    "test:coverage": "vitest run --coverage"
+    "db:seed": "tsx --conditions=react-server --env-file-if-exists=.env.local lib/server/db/seed.ts",
+    "test:coverage": "vitest run --coverage",
+    "test:int": "vitest run --config vitest.int.config.mts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.2",
@@ -43,6 +44,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.5"
   },

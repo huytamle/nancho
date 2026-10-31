@@ -13,6 +13,19 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # DB "postgres": migrate + seed như production. DB "heat_test": integration test (bị xoá sạch mỗi lần chạy).
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      DIRECT_URL: postgres://postgres:postgres@localhost:5432/postgres
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/heat_test
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +38,10 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run test:coverage
-      # TODO(M2): integration test với Postgres (service container).
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: psql "$DATABASE_URL" -c "CREATE DATABASE heat_test"
+      - run: npm run test:int
       - run: npm run build
 
       - run: npx playwright install --with-deps chromium

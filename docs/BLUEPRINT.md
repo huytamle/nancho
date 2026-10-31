@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.3 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Phiên bản:** 1.4 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.4 (M2):** `slot_templates` thêm `UNIQUE (weekday, ready_time)`; thêm CHECK thời gian mẻ (`cutoff_at ≤ oven_at ≤ ready_at`), `order_items.line_total = unit_price × qty` (§6.2) · `ensureBatches` chỉ sinh mẻ cho ngày **chưa có** `service_days` (§15 M2) · dev dependency `tsx` cho script seed (§5.2).
 > **Thay đổi 1.3 (M1):** `priceOrder` trả kết quả có kiểu (§7.4) · làm rõ quyền bếp/shipper (§7.5) · Prep trả `split`/`byProduct` có cấu trúc thay cho chuỗi `breakdown`, điểm giao trong tuyến xếp theo khu vực rồi số thứ tự (§7.6, Phụ lục B) · regex mã chuyển khoản chặn số dính liền (§7.8) · seed Phụ lục A ở `data/seed.ts`.
 > **Thay đổi 1.2:** ✅ Giữ **Café, KOLD Gelato và Đặt bàn** của quán THE HEAT thành mục riêng `/tai-quan` (§5.4) — không thuộc luồng đặt món · Thêm token `--on-accent` (chữ đen trên nền cam, §9.1) · M0 hoàn tất.
 > **Thay đổi 1.1:** ✅ Rêu vừa là **bếp** vừa là **điểm nhận** · ✅ Thực đơn & giá theo Phụ lục A là chính thức · Database mặc định đổi từ Neon sang **Supabase (Postgres, Singapore)**.
@@ -231,6 +232,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | Rate limit | **Bảng Postgres** (fixed window) | Lưu lượng thị trấn nhỏ; bớt một nhà cung cấp (Upstash) |
 | Thông báo bếp | **Telegram Bot API** | Miễn phí, tức thì, có trên mọi điện thoại |
 | Thanh toán | **VietQR** (ảnh QR từ `img.vietqr.io`) + **SePay webhook** (M6) | QR chuẩn Napas, mọi app ngân hàng quét được; SePay báo giao dịch tự động |
+| Script | **`tsx`** (dev) | Chạy `db:seed` bằng TypeScript + alias `@/` với `--conditions=react-server` (để `server-only` không ném lỗi) |
 | Test | **Vitest** (unit/integration), **Playwright** (e2e, viewport iPhone 13 & Pixel 7), `@axe-core/playwright` | Theo `02-guides/testing/*` |
 | Hosting | **Phương án A (khuyến nghị):** Vercel **Pro**, function region `sin1`. **Phương án B (rẻ nhất):** 1 VPS 2 GB (Docker: `next start` standalone + Postgres + Caddy) | Gói Hobby của Vercel chỉ dành cho mục đích **phi thương mại** → app bán hàng cần Pro hoặc tự host. Code không phụ thuộc API riêng của Vercel |
 | Analytics | Vercel Web Analytics *hoặc* Umami tự host + sự kiện tuỳ chỉnh | Nhẹ, không cookie quảng cáo |
@@ -403,7 +405,7 @@ staff        settings        rate_limits        (GĐ2: waitlist, day_stock)
 **`zones`**: `id` serial, `name` ("Khu phố 2"), `route_id` FK, `ship_fee` int, `sort`, `is_active`.
 **`pickup_points`**: `id` serial, `name` ("Cà phê Rêu"), `address`, `maps_url`, `gift_product_id` FK null (`sauce-garlic-butter`), `is_active`.
 
-**`slot_templates`**: `id`, `weekday` smallint (0 = CN … 6 = T7), `ready_time` time (`17:00`), `oven_lead_min` smallint (20), `cutoff_time` time (`15:30`), `cap_pan` smallint, `cap_bbq` smallint, `is_active`.
+**`slot_templates`**: `id`, `weekday` smallint (0 = CN … 6 = T7), `ready_time` time (`17:00`), `oven_lead_min` smallint (20), `cutoff_time` time (`15:30`), `cap_pan` smallint, `cap_bbq` smallint, `is_active`. `UNIQUE (weekday, ready_time)`; `CHECK (cutoff_time < ready_time)`.
 
 **`service_days`**: `date` date PK, `status` enum `open·closed·paused`, `pause_message` text null, `order_seq` int default 0, `summary_sent_at` timestamptz null, `note`.
 
@@ -1216,10 +1218,11 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - `lib/domain/*` theo §7 + test; Phụ lục B làm fixture.
 - **Chấp nhận:** coverage `lib/domain` ≥ 95%; test Prep khớp từng con số của §10.2.
 
-### M2 — DB & DAL (≈ 1–2 ngày)
+### M2 — DB & DAL (≈ 1–2 ngày) ✅
 - Chủ quán tạo dự án Supabase (region Singapore) và nhập `DATABASE_URL`/`DIRECT_URL` vào biến môi trường; Agent không cần mật khẩu trong chat.
 - Schema Drizzle §6, migration (kèm bật RLS cho mọi bảng), seed Phụ lục A, `ensureBatches(from, days)` idempotent, DAL đọc catalog (`'use cache'` + tag) và lịch.
 - **Chấp nhận:** `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` trả đúng với dữ liệu seed.
+- Ghi chú triển khai: `ensureBatches` chỉ sinh mẻ cho ngày chưa có `service_days` → mẻ chủ quán sửa/xoá tay không bị tạo lại; ngày không có template không có bản ghi (= `day_off`). Seed chạy lại không ghi đè dữ liệu đã sửa. Mỗi DAL có hàm `load*(db)` thuần (test được) + bản `'use cache'` (`getCatalog`). Integration test: `npm run test:int` với `TEST_DATABASE_URL` (DB bị xoá sạch); CI dùng service `postgres:16`.
 
 ### M3 — Giao diện đặt món (≈ 3–4 ngày)
 - Sheet primitive (§9.9), Oven Bar (stream + poll), Brand strip, Bento Menu, Item Sheet, Cart store + Cart bar, Checkout Sheet (chưa nối server: dùng action giả), màn thành công, sheet "Vì sao đặt trước?".

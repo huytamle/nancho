@@ -19,8 +19,9 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 |---|---|---|
 | Tài liệu (Blueprint 1.1, Marketing) | ✅ trên `main` | `f185f2a`, `8014fff` |
 | **M0 — Dọn nền** | ✅ trên `main` | `1341efc` |
-| **M1 — Domain lõi thuần + test** | ✅ (xem commit M1) | — |
-| M2 — DB & DAL | ⏭ **làm tiếp** | — |
+| **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
+| **M2 — DB & DAL** | ✅ (xem commit M2) | — |
+| M3 — Giao diện đặt món | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -59,15 +60,25 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 2. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
-## M2 — việc cần làm (BLUEPRINT §6, §15)
+## M2 — đã làm
 
-- **Chủ quán phải làm trước:** tạo dự án Supabase (region Singapore), điền `DATABASE_URL` (pooler 6543) & `DIRECT_URL` (5432) vào `.env.local` / biến môi trường. Agent không nhận mật khẩu qua chat.
-- `lib/server/db/schema.ts` (Drizzle, §6.2 + CHECK/UNIQUE/index §6.2–6.3), `client.ts` (postgres.js, `prepare: false` cho pooler), migration kèm **bật RLS mọi bảng, không policy** (§12), `seed.ts` import `data/seed.ts` (script `db:seed` đang trỏ `node … lib/server/db/seed.ts` — Node chạy TS trực tiếp nhưng **không hiểu alias `@/`** → dùng import tương đối hoặc thêm `tsx`).
-- `ensureBatches(from, days)` idempotent từ slot template (giờ qua `vnInstant`), DAL `catalog` (`'use cache'` + `cacheTag('catalog')`), `schedule` → `getOvenStatus(now)` gọi `computeOvenStatus`. Mọi file `lib/server/*` có `import 'server-only'`.
-- Integration test với Postgres thật (service container trong CI, TODO đã ghi trong `ci.yml`).
-- Chấp nhận: `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` đúng với seed.
+- **`lib/server/db/schema.ts`**: 18 bảng §6.2, mọi bảng `.enableRLS()` không policy. CHECK: suất mẻ (`used ≤ cap`, ≥ 0), thời gian mẻ, `orders` đúng một trong zone/pickup **khớp `fulfillment`**, `total = subtotal + ship − discount ≥ 0`, note ≤ 300, `line_total = unit_price × qty`, `short` ≤ 40. UNIQUE `(service_date, ready_at)`, `(service_date, seq)`, `(weekday, ready_time)`. Ngày = `date` mode string (`ISODate`), `numeric` mode number. Schema **không** `server-only` (drizzle-kit đọc nó).
+- **`drizzle/0000_init.sql`** (sinh bởi `db:generate`). `drizzle.config.ts` tự đọc `.env.local` nếu thiếu `DIRECT_URL`.
+- **`client.ts`**: `getDb()` lười (build không cần env), `prepare: false`, `max: 5`, giữ trên `globalThis`; `closeDb()`; kiểu `Executor` dùng chung cho `db`/`tx`.
+- **DAL**: `settings.ts` (`loadSettings` merge mặc định; `contact` lấy từ `data/site.ts`), `catalog.ts` (`loadCatalog` + `getCatalog` `'use cache'`/`cacheLife('hours')`/`cacheTag('catalog')`, ẩn `is_active = false`, giữ món hết hàng), `schedule.ts` (`ensureBatches`, `loadServiceDays`, `getOvenStatus(now)` = hôm nay … +`daysAhead`).
+- **`seed.ts`**: import `data/seed.ts`, `onConflictDoNothing` (chạy lại không ghi đè chỉnh sửa), đẩy sequence `routes/zones/pickup_points`, rồi `ensureBatches(hôm nay, daysAhead + 1)`. Script `db:seed` = `tsx --conditions=react-server …` (đã thêm `tsx` dev).
+- **Integration test** `lib/server/__tests__/db.int.test.ts` (14 test): RLS, seed đủ/idempotent, catalog, ensureBatches (giờ VN, idempotent, song song), CHECK suất, `getOvenStatus` open/closing_soon/after_cutoff/day_off/last/paused. `npm run test:int` cần `TEST_DATABASE_URL` (**xoá sạch DB đó**); `npm test` loại `*.int.test.ts`. CI: service `postgres:16` → migrate → seed → test:int.
+- Đã kiểm tra trong Next thật (trang tạm, đã xoá): `getCatalog` cache được, `getOvenStatus` stream trong `<Suspense>`.
+
+## M3 — lưu ý từ M2
+
+- `getCatalog()` dùng trong shell tĩnh → **`next build` sẽ truy vấn DB** (prerender). Vercel/CI cần `DATABASE_URL` lúc build (CI đã có).
+- Chủ quán vẫn **chưa tạo Supabase** → khi có: điền `.env.local`, chạy `npm run db:migrate && npm run db:seed`.
+- Cron `/api/cron/daily` (M4) gọi `ensureBatches(hôm nay, daysAhead + 1)`.
 
 ## Bẫy môi trường đã gặp
+
+- Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
 
 - `pkill -f "next start"` giết luôn shell của chính lệnh → exit 144. Chạy server bằng `npx next start -p 3100 &` rồi `kill $!`.
 - Chụp màn hình khi server cũ còn chạy sau khi build lại → CSS lệch, ảnh sai. Luôn dừng server trước khi build.

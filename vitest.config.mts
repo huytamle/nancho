@@ -8,6 +8,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["lib/**/*.test.ts"],
+    exclude: ["lib/**/*.int.test.ts"],
     coverage: {
       include: ["lib/domain/**/*.ts"],
       exclude: ["lib/domain/__tests__/**"],
