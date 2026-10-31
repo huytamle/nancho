@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { countStock, produceStock, wasteStock } from "@/app/actions/stock";
 import { useAdminAction } from "@/components/admin/use-admin";
+import { CafePanel } from "@/components/ops/cafe-panel";
 import { DebtSection, MarginSection, ReceiveSection } from "@/components/ops/stock-manage";
 import { chip, label, parseQty } from "@/components/ops/stock-ui";
 import { box, h2, primaryBtn } from "@/components/ops/styles";
@@ -11,6 +12,7 @@ import { WASTE_REASONS, type WasteReason } from "@/lib/domain/stock";
 import { vnDateOf, vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
 import { signed } from "@/lib/ops-text";
+import type { CafeView } from "@/lib/server/dal/cafe";
 import type { CountResultLine, StockView } from "@/lib/server/dal/stock";
 import { FLAG_LABEL, LEVEL_LABEL, MOVE_LABEL, pctText, qtyText, REASON_LABEL } from "@/lib/stock-text";
 
@@ -23,8 +25,8 @@ const dm = (iso: string) => {
 };
 
 // Tab "Kho" (§17.8): tồn · làm & huỷ · nhập · công nợ · kiểm kê · biên lãi. Quyền theo DTO (canManage = owner/manager).
-export function StockPanel({ stock }: { stock: StockView }) {
-  const sections: Section[] = stock.canManage ? ["ton", "nhap", "no", "lam", "kiem", "lai"] : ["ton", "lam", "kiem"];
+export function StockPanel({ stock, cafe }: { stock: StockView; cafe: CafeView | null }) {
+  const sections: Section[] = stock.canManage ? ["ton", "nhap", "no", "lam", "kiem", "cafe", "lai"] : cafe ? ["ton", "lam", "kiem", "cafe"] : ["ton", "lam", "kiem"];
   const [section, setSection] = useState<Section>("ton");
   return (
     <div className="space-y-5">
@@ -53,6 +55,8 @@ export function StockPanel({ stock }: { stock: StockView }) {
           hint={t.countHint}
           items={stock.items.filter((i) => i.trackStock).map((i) => ({ id: i.id, label: i.label, unit: i.unit }))}
         />
+      ) : section === "cafe" && cafe ? (
+        <CafePanel cafe={cafe} />
       ) : (
         <MarginSection stock={stock} />
       )}

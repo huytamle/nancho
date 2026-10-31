@@ -4,6 +4,7 @@ import * as z from "zod";
 import type { AdminResult } from "@/lib/admin-contract";
 import { EXPENSE_SOURCES } from "@/lib/domain/expense-command";
 import { MAX_AMOUNT } from "@/lib/domain/money-text";
+import { SEGMENTS } from "@/lib/domain/metrics";
 import { ROLES } from "@/lib/domain/roles";
 import { COUNT_CLASSES, STOCK_LEVELS, WASTE_REASONS } from "@/lib/domain/stock";
 import {
@@ -97,6 +98,7 @@ const Item = z
     countClass: z.enum(COUNT_CLASSES),
     countRoles: z.array(z.enum(ROLES)).min(1).max(6),
     countTolerancePct: z.number().int().min(0).max(100),
+    segment: z.enum(SEGMENTS).optional(),
   })
   .refine((v) => (v.purchaseUnit === null) === (v.purchaseFactor === null));
 export async function saveStockItem(raw: z.input<typeof Item>): Promise<AdminResult> {

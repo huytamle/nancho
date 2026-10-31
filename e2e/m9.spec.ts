@@ -59,7 +59,7 @@ test("bảng công tháng 10 → xác nhận PIN → phiếu lương → đã nh
   // Quản lý: thấy bảng công 10/2026 của Vy (không phải của mình), xếp lịch, gửi.
   await login(page, STAFF.manager);
   await page.goto("/admin/van-hanh?tab=cong");
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Chi phí", "Kho", "Sổ tay", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Chi phí", "Kho", "Chỉ số", "Sổ tay", "Nhân viên"]);
   const sheets = page.getByRole("region", { name: "Bảng công 10/2026" });
   await expect(sheets.getByText("Pha chế Vy")).toBeVisible();
   await expect(sheets.getByText("Quản lý Mai")).toHaveCount(0);
@@ -86,7 +86,7 @@ test("bảng công tháng 10 → xác nhận PIN → phiếu lương → đã nh
   // Chủ quán: đơn giá → tính phiếu → duyệt → chuyển khoản.
   await login(page, STAFF.owner);
   await page.goto("/admin/van-hanh?tab=luong");
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Chi phí", "Lương", "Kho", "Sổ tay", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Chi phí", "Lương", "Kho", "Chỉ số", "Sổ tay", "Nhân viên"]);
   expect(await noHorizontalScroll(page)).toBe(true);
   await tabs(page).getByRole("button", { name: "Công" }).click();
   expect(await noHorizontalScroll(page)).toBe(true);

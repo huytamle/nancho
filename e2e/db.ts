@@ -43,6 +43,7 @@ export async function resetOrders() {
   await s`DELETE FROM holidays`;
   await s`DELETE FROM settings WHERE key = 'payroll'`;
   await s`DELETE FROM cash_handovers`;
+  await s`DELETE FROM cafe_sales`;
   await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
   await s`UPDATE service_days SET order_seq = 0, status = 'open', pause_message = NULL`;
@@ -177,4 +178,21 @@ export async function seedStock(rows: Record<string, number>) {
 export async function onHand(id: string) {
   const [row] = await db()<{ qty: string | null }[]>`SELECT sum(qty)::text AS qty FROM stock_moves WHERE ingredient_id = ${id}`;
   return Number(row?.qty ?? 0);
+}
+
+// ── Chỉ số & kho café (M11) ──
+
+/** Ca đã đóng ngày `date` của `name` với doanh thu café (Sapo) và lần đếm két `counted` (đáng có = tiền mặt café). */
+export async function seedClosedShift(name: string, date: string, cafeCash: number, cafeTransfer: number, counted: number) {
+  const s = db();
+  const [sh] = await s<{ id: number; staff: number }[]>`
+    INSERT INTO shifts (service_date, status, opened_by, opened_at, closed_by, closed_at, cafe_cash, cafe_transfer, cafe_other, sapo_photo)
+    SELECT ${date}, 'closed', id, ${`${date}T07:00:00+07:00`}::timestamptz, id, ${`${date}T22:00:00+07:00`}::timestamptz, ${cafeCash}, ${cafeTransfer}, 0, 'e2e'
+    FROM staff WHERE name = ${name} RETURNING id, opened_by AS staff`;
+  await s`INSERT INTO cash_entries (box, kind, shift_id, counts, total, expected, staff_id, created_at)
+    VALUES ('register', 'close', ${sh.id}, ${s.json({})}, ${counted}, ${cafeCash}, ${sh.staff}, ${`${date}T22:00:00+07:00`}::timestamptz)`;
+}
+
+export async function seedPayRate(name: string, hourlyRate: number) {
+  await db()`INSERT INTO pay_rates (staff_id, hourly_rate, effective_from) SELECT id, ${hourlyRate}, '2026-01-01' FROM staff WHERE name = ${name}`;
 }

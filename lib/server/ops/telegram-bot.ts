@@ -34,6 +34,12 @@ import {
 import { billCode, billText, debtSummaryText, payDebtText, qtyText, stockInText } from "@/lib/stock-text";
 import type { TelegramApi } from "@/lib/server/notify/telegram";
 import { hasRole } from "@/lib/domain/roles";
+import type { Pnl } from "@/lib/domain/metrics";
+import { vnDateOf } from "@/lib/domain/time";
+import { periodLabel } from "@/lib/domain/worktime";
+import { pnlText } from "@/lib/metrics-text";
+import { pnlFor, resolvePeriod } from "@/lib/server/dal/metrics";
+import { scheduleWeek } from "@/lib/server/dal/reports";
 
 // Bot vận hành (§17.4). Privacy mode BẬT → trong nhóm bot chỉ nhận lệnh `/…`, tin trả lời chính bot và nút bấm.
 // Idempotent theo update_id. Chỉ nhận nhóm đã cấu hình (TELEGRAM_CHAT_ID / TELEGRAM_OPS_CHAT_ID) và chat riêng.
@@ -71,6 +77,7 @@ export type BotDeps = {
 const err = copy.admin.errors;
 const NOT_LINKED = "Bạn chưa liên kết Telegram với app. Mở app → Vận hành → Nhân viên → [Liên kết Telegram].";
 const NO_RIGHT = "Chỉ chủ quán/quản lý được ghi chi tiền.";
+const PNL_PRIVATE = "📈 /pl có chi phí nhân sự nên chỉ trả lời trong chat riêng với chủ quán.";
 
 function allowed(deps: BotDeps): number[] {
   if (deps.allowedChats) return deps.allowedChats;
@@ -204,6 +211,20 @@ async function onMessage(msg: z.infer<typeof Message>, db: Db, deps: BotDeps): P
             : `Chưa đọc được ${cmd.reason === "amount" ? "số tiền" : "nội dung chi"}.\n\n${BOT_HELP}`,
       );
       return "handled";
+    case "schedule":
+      await reply(await scheduleWeek(deps.now, cmd.next, db));
+      return "handled";
+    case "pnl": {
+      // P&L có chi phí nhân sự → chỉ trả lời trong chat riêng với owner (§17.10).
+      if (!isPrivate || !actor.roles.includes("owner")) {
+        await reply(PNL_PRIVATE);
+        return "handled";
+      }
+      const period = resolvePeriod(cmd.period, vnDateOf(deps.now));
+      const { pnl } = await pnlFor(period, actor, db);
+      await reply(pnlText(periodLabel(period), pnl as Pnl));
+      return "handled";
+    }
     case "debts": {
       if (!canSpend(actor)) {
         await reply(NO_RIGHT);

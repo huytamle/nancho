@@ -9,10 +9,12 @@ import { chip, label, parseQty } from "@/components/ops/stock-ui";
 import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/styles";
 import { opsCopy } from "@/data/copy-ops";
 import { EXPENSE_SOURCES, type ExpenseSource } from "@/lib/domain/expense-command";
+import { SEGMENTS, type Segment } from "@/lib/domain/metrics";
 import { ROLES, type Role } from "@/lib/domain/roles";
 import { COUNT_CLASSES, STOCK_LEVELS, type CountClass, type StockLevel } from "@/lib/domain/stock";
 import { vnDateOf } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
+import { SEGMENT_LABEL } from "@/lib/metrics-text";
 import { ROLE_LABEL, SOURCE_LABEL } from "@/lib/ops-text";
 import type { StockRowView, StockView } from "@/lib/server/dal/stock";
 import { billCode, billLineText, LEVEL_LABEL, qtyText } from "@/lib/stock-text";
@@ -256,6 +258,7 @@ function ItemEditor({ item }: { item: StockRowView }) {
   const [pFactor, setPFactor] = useState(item.purchaseFactor?.toString().replace(".", ",") ?? "");
   const [aliases, setAliases] = useState(item.aliases.join(", "));
   const [tol, setTol] = useState(String(item.countTolerancePct));
+  const [segment, setSegment] = useState<Segment>(item.segment);
   const id = `item-${item.id}`;
   const factor = parseQty(pFactor);
   const valid = (pUnit.trim() === "") === (pFactor.trim() === "") && (pFactor.trim() === "" || (factor !== null && factor > 0)) && roles.length > 0;
@@ -284,6 +287,13 @@ function ItemEditor({ item }: { item: StockRowView }) {
           {STOCK_LEVELS.map((l) => (
             <button key={l} type="button" role="radio" aria-checked={level === l} onClick={() => setLevel(l)} className={chip(level === l)}>
               {LEVEL_LABEL[l]}
+            </button>
+          ))}
+        </div>
+        <div role="radiogroup" aria-label={t.segment} className="flex flex-wrap gap-2">
+          {SEGMENTS.map((g) => (
+            <button key={g} type="button" role="radio" aria-checked={segment === g} onClick={() => setSegment(g)} className={chip(segment === g)}>
+              {SEGMENT_LABEL[g]}
             </button>
           ))}
         </div>
@@ -340,6 +350,7 @@ function ItemEditor({ item }: { item: StockRowView }) {
                   countClass: cls,
                   countRoles: roles,
                   countTolerancePct: Math.min(100, Math.max(0, Math.round(Number(tol) || 0))),
+                  segment,
                 }),
               t.savedItem,
             )

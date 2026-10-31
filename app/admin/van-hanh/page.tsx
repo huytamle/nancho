@@ -10,6 +10,8 @@ import { loadHandbookView } from "@/lib/server/dal/handbook";
 import { loadOpsView } from "@/lib/server/dal/ops";
 import { loadOvenLock, SALE_DAY_ROLES } from "@/lib/server/dal/sale-day";
 import { loadStockView } from "@/lib/server/dal/stock";
+import { loadCafeView } from "@/lib/server/dal/cafe";
+import { canSeeMetrics, loadMetricsView } from "@/lib/server/dal/metrics";
 import { hasRole } from "@/lib/domain/roles";
 import { loadPayrollView, loadTimeView } from "@/lib/server/dal/payroll";
 import { isISODate } from "@/lib/domain/time";
@@ -39,7 +41,7 @@ async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchP
   const period = typeof ky === "string" && isPeriod(ky) ? ky : null;
   const week = typeof tuan === "string" && isISODate(tuan) ? tuan : null;
   const ip = await clientIp();
-  const [view, work, book, time, payroll, lock, stock] = await Promise.all([
+  const [view, work, book, time, payroll, lock, stock, metrics, cafe] = await Promise.all([
     loadOpsView(actor, now),
     loadWorkView(actor, now),
     loadHandbookView(actor, slug, now),
@@ -47,6 +49,9 @@ async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchP
     loadPayrollView(actor, now, { period }),
     hasRole(staff.roles, SALE_DAY_ROLES) ? loadOvenLock(now) : null,
     loadStockView(actor, now),
+    // Chỉ số chỉ dựng khi mở tab (nhiều truy vấn tổng hợp); null nếu không có quyền.
+    initial === "chi-so" ? loadMetricsView(actor, now, { period }) : null,
+    loadCafeView(actor, now),
   ]);
   return (
     <OpsDashboard
@@ -56,6 +61,9 @@ async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchP
       payroll={payroll}
       lock={lock}
       stock={stock}
+      metrics={metrics}
+      canMetrics={canSeeMetrics(actor)}
+      cafe={cafe}
       handbook={<HandbookPanel view={book} now={now.toISOString()} />}
       bookPage={book.page?.slug ?? null}
       initialTab={initial}

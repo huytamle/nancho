@@ -126,6 +126,10 @@ export const BOT_HELP = [
   "Khoá lò khẩn cấp (chủ quán/quản lý/bếp):",
   "/khoalo mất điện — ngưng nhận đơn hôm nay + danh sách đơn cần gọi",
   "/molo — mở lại",
+  "",
+  "Trợ thủ:",
+  "/lich — lịch ca tuần này (/lich sau — tuần sau)",
+  "/pl — lãi lỗ tháng này theo mảng (chỉ chủ quán, chat riêng); /pl 10 — tháng 10",
 ].join("\n");
 
 /** Số đo checklist ngoài ngưỡng (§17.5): "⚠️ Tủ mát bếp: 7 °C (chuẩn ≤ 5 °C) · Nhiệt độ tủ · Vy 14:05". */

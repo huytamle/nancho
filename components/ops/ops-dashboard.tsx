@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { logout } from "@/app/actions/auth";
 import { ExpensePanel } from "@/components/ops/expense-panel";
+import { MetricsPanel } from "@/components/ops/metrics-panel";
 import { ChecklistPanel } from "@/components/ops/checklist-panel";
 import { PayrollPanel } from "@/components/ops/payroll-panel";
 import { TimePanel } from "@/components/ops/time-panel";
@@ -18,17 +20,20 @@ import type { OpsView } from "@/lib/server/dal/ops";
 import type { PayrollView, TimeView } from "@/lib/server/dal/payroll";
 import type { OvenLockView } from "@/lib/server/dal/sale-day";
 import type { StockView } from "@/lib/server/dal/stock";
+import type { CafeView } from "@/lib/server/dal/cafe";
+import type { MetricsView } from "@/lib/server/dal/metrics";
 
 const t = opsCopy;
 
 /** Tab theo quyền: chi phí chỉ owner/manager, lương chỉ owner, kho cho owner/manager/bếp/pha chế (§17.2). */
-export const opsTabsFor = (v: OpsView["viewer"], stock = false): OpsTab[] => {
+export const opsTabsFor = (v: OpsView["viewer"], stock = false, metrics = false): OpsTab[] => {
   const tabs: OpsTab[] = v.isOwner
     ? ["ca", "viec", "cong", "chi", "luong", "so-tay", "nhan-vien"]
     : v.canSpend
       ? ["ca", "viec", "cong", "chi", "so-tay", "nhan-vien"]
       : ["ca", "viec", "cong", "so-tay", "nhan-vien"];
   if (stock) tabs.splice(tabs.indexOf("so-tay"), 0, "kho");
+  if (metrics) tabs.splice(tabs.indexOf("so-tay"), 0, "chi-so");
   return tabs;
 };
 
@@ -41,6 +46,9 @@ export function OpsDashboard({
   payroll,
   lock,
   stock,
+  metrics,
+  canMetrics,
+  cafe,
   handbook,
   bookPage,
   initialTab,
@@ -54,18 +62,31 @@ export function OpsDashboard({
   lock: OvenLockView | null;
   /** Kho (§17.8) — null nếu không có vai trò kho. */
   stock: StockView | null;
+  /** Chỉ số (§17.10) — chỉ dựng khi mở tab `chi-so` (owner/manager). */
+  metrics: MetricsView | null;
+  canMetrics: boolean;
+  /** Kho café (M11) — owner/manager/pha chế. */
+  cafe: CafeView | null;
   handbook: ReactNode;
   bookPage: string | null;
   initialTab: OpsTab;
   kitchen: boolean;
 }) {
-  const tabs = opsTabsFor(view.viewer, stock !== null);
+  const tabs = opsTabsFor(view.viewer, stock !== null, canMetrics);
   const [tab, setTab] = useState<OpsTab>(tabs.includes(initialTab) ? initialTab : "ca");
+  const router = useRouter();
 
   function switchTab(next: OpsTab) {
     setTab(next);
     // Sổ tay giữ `trang=` đang xem — nội dung `handbook` đã dựng ở server cho đúng trang đó.
     let page = next === "so-tay" && bookPage ? `&trang=${encodeURIComponent(bookPage)}` : "";
+    // Chỉ số dựng ở server khi mở tab → điều hướng thật (giữ kỳ đang xem).
+    if (next === "chi-so" && !metrics) {
+      const q = new URLSearchParams(window.location.search);
+      router.push(`/admin/van-hanh?tab=chi-so${q.get("ky") ? `&ky=${encodeURIComponent(q.get("ky")!)}` : ""}`);
+      setTab(next);
+      return;
+    }
     // Công/Lương giữ kỳ (`ky`) và tuần lịch ca (`tuan`) đang xem — dữ liệu đã dựng theo chúng.
     if (next === "cong" || next === "luong") {
       const q = new URLSearchParams(window.location.search);
@@ -133,7 +154,9 @@ export function OpsDashboard({
               {stock ? <QuickCount stock={stock} /> : null}
             </div>
           ) : tab === "kho" && stock ? (
-            <StockPanel stock={stock} />
+            <StockPanel stock={stock} cafe={cafe} />
+          ) : tab === "chi-so" ? (
+            metrics ? <MetricsPanel view={metrics} /> : <div className="h-80 animate-pulse rounded-tile bg-surface" aria-busy />
           ) : tab === "cong" ? (
             <TimePanel time={time} />
           ) : tab === "chi" ? (

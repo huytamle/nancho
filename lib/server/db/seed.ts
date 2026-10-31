@@ -11,7 +11,7 @@ import {
   seedZones,
 } from "@/data/seed";
 import { seedChecklistTemplates, seedHandbookPages } from "@/data/seed-ops";
-import { seedFormulas, seedStockIngredients, seedStockProfiles } from "@/data/seed-stock";
+import { seedCafeItems, seedFormulas, seedStockIngredients, seedStockProfiles } from "@/data/seed-stock";
 import { vnDateOf } from "@/lib/domain/time";
 import { serverNow } from "@/lib/server/clock";
 import { closeDb, getDb, type Db } from "@/lib/server/db/client";
@@ -56,6 +56,12 @@ export async function seedStatic(db: Db = getDb()) {
         .where(and(eq(t.ingredients.id, id), eq(t.ingredients.trackStock, false), sql`cardinality(${t.ingredients.aliases}) = 0`));
     }
     await tx.insert(t.productionFormulas).values(seedFormulas).onConflictDoNothing();
+
+    // M11: món café + định lượng (chỉ món mới — món chủ quán đã sửa giữ nguyên).
+    for (const { lines, ...item } of seedCafeItems) {
+      const [row] = await tx.insert(t.cafeItems).values(item).onConflictDoNothing().returning({ id: t.cafeItems.id });
+      if (row && lines.length) await tx.insert(t.cafeRecipeLines).values(lines.map((l) => ({ itemId: row.id, ...l })));
+    }
 
     // Id serial được chèn tay → đẩy sequence lên để bản ghi admin thêm sau không trùng khoá.
     for (const table of ["routes", "zones", "pickup_points", "checklist_templates"]) {

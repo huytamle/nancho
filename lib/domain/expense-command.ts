@@ -7,6 +7,7 @@
 //   /khoalo [lý do] · /molo        → khoá/mở lò khẩn cấp (§18.1)
 //   /no Cô Nhiều 3 thùng sting, 2 thùng pepsi 480k → phiếu nợ nhà cung cấp (§17.8, M10)
 //   /trano Cô Nhiều 480k [#tui|#ck] · /congno       → trả nợ (ghi một chi phí) · nợ còn lại theo NCC
+//   /lich [tuần sau] · /pl [10 | 2026-10]           → lịch ca tuần · P&L tháng theo mảng (M11, §17.10)
 
 import { fold, parseAmount } from "@/lib/domain/money-text";
 import { parseDebt, type DebtDraft } from "@/lib/domain/stock";
@@ -83,6 +84,8 @@ export type BotCommand =
   | ({ kind: "debt" } & DebtDraft)
   | { kind: "pay_debt"; supplier: string; amount: number; source: ExpenseSource }
   | { kind: "debts" }
+  | { kind: "schedule"; next: boolean }
+  | { kind: "pnl"; period: string | null }
   | { kind: "invalid"; reason: "amount" | "description" | "code" | "debt" | "pay_debt" };
 
 /** Mã chứng từ hiển thị: C123. */
@@ -127,9 +130,23 @@ export function parseBotCommand(text: string, botUsername?: string): BotCommand 
       return parsePayDebt(rest);
     case "congno":
       return { kind: "debts" };
+    case "lich":
+      return { kind: "schedule", next: /^(tuan )?sau$|^next$/.test(fold(rest)) };
+    case "pl":
+      return { kind: "pnl", period: parsePeriodArg(rest) };
     default:
       return null;
   }
+}
+
+/** "/pl 10" · "/pl t10" → "--10" (năm do nơi gọi suy ra); "/pl 2026-10" · "/pl 10/2026" → "2026-10"; khác → null (tháng này). */
+export function parsePeriodArg(rest: string): string | null {
+  const s = fold(rest.trim()).replace(/^thang\s*|^t/, "");
+  const iso = s.match(/^(\d{4})-(\d{1,2})$/);
+  const vn = s.match(/^(\d{1,2})\/(\d{4})$/);
+  const [y, mo] = iso ? [iso[1], iso[2]] : vn ? [vn[2], vn[1]] : ["-", s.match(/^\d{1,2}$/)?.[0]];
+  const n = Number(mo);
+  return mo && n >= 1 && n <= 12 ? `${y}-${String(n).padStart(2, "0")}` : null;
 }
 
 /** Tách thẻ nguồn tiền (#tui, #ck, #hop) khỏi các từ còn lại. */

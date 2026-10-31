@@ -32,7 +32,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9.5 — Gói "Ngày bán"** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M10 — Kho 2 mức, công nợ NCC, biên lợi nhuận, kiểm nhanh ABC** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| M11 (chỉ số + kho café + báo cáo tối + trợ thủ Telegram) | 📝 Blueprint §15, §17.10 | — |
+| **M11 — Chỉ số, kho café, báo cáo tối, trợ thủ Telegram** | ✅ trên nhánh (31/10/2026) — chờ chủ quán bảo đưa lên `main` | xem `git log` |
 | Giai đoạn 3 — ca linh hoạt (đăng ký/đổi ca, xin nghỉ) | 📝 khi ≥ 4 nhân viên (§15) | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
@@ -280,11 +280,31 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 2. Tab **Kho → Biên lãi → Hồ sơ mặt hàng**: chỉnh mức tối thiểu, hạn dùng, từ khoá (để `/chi`, `/no` khớp đúng), nhóm A/B/C, ai đếm. Công thức sản xuất hiện là placeholder (1.500 g bột + 15 g men → 6 đế; 550 g sườn → 1 túi) — báo lại số thật để sửa trong seed/DB.
 3. Ngày đầu: **Kiểm kê** đếm mọi mặt hàng theo dõi (tạo tồn đầu); nhập kho có thành tiền để có giá vốn → Biên lãi mới có số.
 
-## M11 — lưu ý từ M10
+## M11 — lưu ý từ M10 (đã xử lý)
 
 - Food cost % = (tồn đầu + nhập − tồn cuối) / doanh thu: tiền theo `stock_moves.qty × unit_cost` (đã có tổng tháng nhập/huỷ/lệch ở `loadStockView().month`); "hao hụt" = Σ `adjust` + `waste`.
 - Báo cáo tối "tồn nhóm A sau Ra lò" và "cần đặt …": dùng `stockAlerts()` / `quickCountItems` + `par_level`. Nhắc đi chợ = `below_par`.
-- Định lượng đồ uống (M11): thêm vào `recipe_lines` với sản phẩm café (hoặc bảng riêng) → `saleUsage`/`productCost` dùng lại được; bao bì (ly, đá, ống hút) là nguyên liệu `goods`.
+- Định lượng đồ uống (M11): ~~thêm vào `recipe_lines`~~ → bảng riêng `cafe_recipe_lines` (xem M11 — đã làm) → `saleUsage`/`productCost` dùng lại được; bao bì (ly, đá, ống hút) là nguyên liệu `goods`.
+
+## M11 — đã làm
+
+- **Bảng** (migration `0007_metrics`): `ingredients.segment` (`pizza·cafe`; migration gán `cafe` cho nguyên liệu chỉ pha chế đếm), `cafe_items` (món café bán qua Sapo, `aliases` = tên trên Sapo), `cafe_recipe_lines` (định lượng/ly — **bảng riêng**, không nhét vào `recipe_lines` vì `products` là catalog pizza có `kind` enum), `cafe_sales` (một lần/ngày). `stock_moves.ref_type` thêm `cafe_sale`.
+- **Domain** `lib/domain/metrics.ts` (P&L theo mảng, food cost, ước tính lương, lấp đầy lò, đi chợ) và `lib/domain/cafe.ts` (đọc bảng Sapo linh hoạt, dán từ Excel/CSV, khớp tên, định lượng) — 100% dòng; `/lich`, `/pl` trong `parseBotCommand`. Văn bản `lib/metrics-text.ts`.
+- **DAL** `dal/metrics.ts` (`loadMetricsView`, `pnlFor`, `resolvePeriod`), `dal/cafe.ts`, `dal/reports.ts` (báo cáo tối, cả ngày, đi chợ, góp ý tuần, lịch ca; `once` dùng `pg_advisory_xact_lock` → song song chỉ gửi một lần). `loadItems`/`loadFormulas` của `dal/stock.ts` giờ export.
+- **Action** `app/actions/cafe.ts` (đọc `.xlsx` bằng `read-excel-file`, `.csv`/bảng dán bằng code thuần; xem trước → xác nhận, server khớp tên lại). `closeShift` gửi báo cáo cả ngày trong `after()`.
+- **Cron**: `/api/cron/evening` mới (`vercel.json`: `15 13 * * 0,5,6`); daily thêm `runMarketReminder`, `runFeedbackDigest`. Xác thực cron tách ra `lib/server/cron-auth.ts`.
+- **AI** `lib/server/notify/ai.ts`: `@anthropic-ai/sdk`, `claude-haiku-5-5`, effort `low`, chỉ khi có `ANTHROPIC_API_KEY`; góp ý bọc trong thẻ `<gop_y>` (dữ liệu, không phải chỉ dẫn); lỗi/refusal → null → danh sách thô.
+- **UI**: tab **Chỉ số** (`components/ops/metrics-panel.tsx`; owner 9 tab, manager 8) — dựng ở server chỉ khi mở tab (bấm tab → `router.push`); chọn kỳ 6 tháng gần nhất. Tab Kho thêm mục **Café** (`components/ops/cafe-panel.tsx`): nhập Sapo (owner/manager/pha chế), món & định lượng + giá vốn/biên lãi (owner/manager). Hồ sơ mặt hàng thêm chọn "Mảng".
+- **Seed**: hạt cà phê, sữa tươi, đá viên, ly + nắp, ống hút (mảng café); món café từ `data/dine-in.ts` (cả gelato, chưa có định lượng); định lượng placeholder (espresso 18 g, flat white 18 g + 150 ml sữa, cold brew 20 g + đá + ly + ống hút). Pepsi/Sting/cold brew → mảng café.
+- **Test:** unit 241 · int 132 (`metrics.int.test.ts` 9: bộ dữ liệu mẫu tháng 2/2027 — P&L từng dòng khớp, DTO manager không có khoá nhân sự, phiếu lương thay số ước tính, nhập Sapo song song chỉ một lần + ghi 23:59 ngày bán, quyền món/nhập, `/pl` chỉ owner chat riêng, `/lich`, báo cáo cả ngày/tối gửi một lần kể cả song song, gửi lỗi thì lần sau gửi lại, đi chợ, góp ý tuần) · e2e: `e2e/m11.spec.ts` (Chỉ số owner vs manager; pha chế dán bảng Sapo → trừ kho); `m9` cập nhật danh sách tab.
+- **Quyết định nhỏ (ghi lại):** "Chi phí theo nhóm" là **dòng tiền** (gồm cả hàng nhập kho, trả nợ); P&L là **giá vốn** (loại chứng từ đã nhập kho & trả nợ NCC — tránh tính hai lần). Báo cáo cả ngày gửi sau ca đóng **đầu tiên** trong ngày (quán hiện một ca/ngày; nếu sau này 2 ca thì đổi sang ca cuối). Phiếu nợ chưa có giá không vào P&L đến khi có giá. Nhân sự chia không theo mảng (một đội). File Sapo thật chưa có → bộ đọc tìm cột theo tên ("Tên hàng/Mặt hàng/Sản phẩm", "Số lượng/SL", "Doanh thu/Thành tiền").
+
+## M11 — việc của chủ quán để bật
+
+1. `npm run db:migrate && npm run db:seed` (migration `0007_metrics`; seed thêm nguyên liệu café + món café — không đè chỉnh sửa).
+2. Gửi **file Excel mẫu** "Bán hàng theo mặt hàng" của Sapo để kiểm bộ đọc; trong lúc chờ có thể dán bảng. Tab Kho → Café: sửa định lượng thật từng món, thêm **tên trên Sapo** nếu khác tên trong app.
+3. Vercel Pro (cron thứ hai `/api/cron/evening`). Tuỳ chọn: đặt `ANTHROPIC_API_KEY` để có tóm tắt góp ý tuần.
+4. Thử `/lich` trong nhóm và `/pl` trong **chat riêng** với bot (chỉ chủ quán).
 
 ## Bẫy môi trường đã gặp
 

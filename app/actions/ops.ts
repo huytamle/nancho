@@ -34,7 +34,8 @@ import {
   setExpenseCategoryCore,
   setStaffRolesCore,
 } from "@/lib/server/dal/ops";
-import { telegramApi } from "@/lib/server/notify/telegram";
+import { sendDayReport } from "@/lib/server/dal/reports";
+import { sendTelegram, telegramApi } from "@/lib/server/notify/telegram";
 import { runOps, notifyOps } from "@/lib/server/ops/run";
 
 // Mutation màn Vận hành (§17): zod → phiên → DAL (kiểm quyền nghiệp vụ) → refresh(). Tin Telegram gửi trong after().
@@ -80,6 +81,8 @@ export async function closeShift(raw: z.input<typeof Close>): Promise<CountResul
     const res = await closeShiftCore(i, { actor, now });
     if (!res.ok) return res;
     notify(res.telegram);
+    // Báo cáo cả ngày (§17.10) ngay sau khi đóng ca café — một lần mỗi ngày, sau tin đóng ca.
+    after(() => sendDayReport(now, sendTelegram).then(() => undefined));
     return { ok: true, total: res.total, expected: res.expected, variance: res.variance };
   });
 }

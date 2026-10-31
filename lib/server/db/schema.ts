@@ -30,6 +30,7 @@ import {
 import type { CashCounts } from "@/lib/domain/cash";
 import type { ChecklistDone, ChecklistItem } from "@/lib/domain/checklist";
 import type { ExpenseCategory } from "@/lib/domain/expense-command";
+import type { Segment } from "@/lib/domain/metrics";
 import type { PayLine } from "@/lib/domain/payroll";
 import type { BillLine, CountClass, CountLine, FormulaLine, WasteReason } from "@/lib/domain/stock";
 import type { Role } from "@/lib/domain/roles";
@@ -126,8 +127,11 @@ export const ingredients = pgTable(
     countClass: text().$type<CountClass>().notNull().default("C"),
     countRoles: role().array().$type<Role[]>().notNull().default(sql`'{kitchen}'::role[]`),
     countTolerancePct: smallint().notNull().default(5),
+    /** Mảng dùng nguyên liệu (M11 — food cost theo mảng): `pizza` · `cafe`. */
+    segment: text().$type<Segment>().notNull().default("pizza"),
   },
   (t) => [
+    check("ingredients_segment_check", sql`${t.segment} IN ('pizza', 'cafe')`),
     check("ingredients_count_class_check", sql`${t.countClass} IN ('A', 'B', 'C')`),
     check("ingredients_cost_check", sql`${t.avgCost} >= 0`),
     check("ingredients_purchase_check", sql`(${t.purchaseUnit} IS NULL) = (${t.purchaseFactor} IS NULL) AND coalesce(${t.purchaseFactor}, 1) > 0`),
@@ -839,7 +843,7 @@ export const stockMoves = pgTable(
     qty: numeric({ precision: 12, scale: 3, mode: "number" }).notNull(),
     kind: stockMoveKind().notNull(),
     unitCost: numeric({ precision: 12, scale: 4, mode: "number" }).notNull().default(0),
-    refType: text().$type<"expense" | "bill" | "production" | "order" | "count" | "manual">(),
+    refType: text().$type<"expense" | "bill" | "production" | "order" | "count" | "manual" | "cafe_sale">(),
     refId: text(),
     reason: text().$type<WasteReason>(),
     note: text(),
@@ -866,6 +870,48 @@ export const stockCounts = pgTable("stock_counts", {
     .references(() => staff.id),
   createdAt: createdAt(),
 }, (t) => [index().on(t.createdAt)]).enableRLS();
+
+// ── Kho café & chỉ số (§17.10, M11) ──
+
+/** Món café bán qua Sapo (không thuộc catalog pizza). `aliases` = tên món trên Sapo (khớp khi nhập file). */
+export const cafeItems = pgTable(
+  "cafe_items",
+  {
+    id: serial().primaryKey(),
+    name: text().notNull().unique(),
+    aliases: text().array().notNull().default(sql`'{}'::text[]`),
+    price: integer().notNull(),
+    isActive: boolean().notNull().default(true),
+    sort: smallint().notNull().default(0),
+  },
+  (t) => [check("cafe_items_price_check", sql`${t.price} >= 0`), check("cafe_items_name_check", sql`char_length(${t.name}) BETWEEN 1 AND 80`)],
+).enableRLS();
+
+/** Định lượng đồ uống: một ly `item_id` dùng `qty` đơn vị gốc của nguyên liệu (gồm ly, đá, ống hút). */
+export const cafeRecipeLines = pgTable(
+  "cafe_recipe_lines",
+  {
+    itemId: integer()
+      .notNull()
+      .references(() => cafeItems.id, { onDelete: "cascade" }),
+    ingredientId: text()
+      .notNull()
+      .references(() => ingredients.id),
+    qty: numeric({ precision: 10, scale: 2, mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.itemId, t.ingredientId] }), check("cafe_recipe_lines_qty_check", sql`${t.qty} > 0`)],
+).enableRLS();
+
+/** Một lần nhập báo cáo "bán hàng theo mặt hàng" của Sapo — tối đa một lần mỗi ngày bán. Trừ kho theo định lượng. */
+export const cafeSales = pgTable("cafe_sales", {
+  id: serial().primaryKey(),
+  serviceDate: isoDate().notNull().unique(),
+  lines: jsonb().$type<{ name: string; itemId: number | null; qty: number; revenue: number | null }[]>().notNull(),
+  createdBy: integer()
+    .notNull()
+    .references(() => staff.id),
+  createdAt: createdAt(),
+}).enableRLS();
 
 export type Order = typeof orders.$inferSelect;
 export type BatchRow = typeof batches.$inferSelect;

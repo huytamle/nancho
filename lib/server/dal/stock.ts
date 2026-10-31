@@ -32,6 +32,7 @@ import {
   type WasteReason,
 } from "@/lib/domain/stock";
 import { vnDateOf, vnInstant } from "@/lib/domain/time";
+import type { Segment } from "@/lib/domain/metrics";
 import type { Product } from "@/lib/domain/types";
 import { stockAlertText, stockCountAlertText, type DebtRow, type StockAlert } from "@/lib/stock-text";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
@@ -142,11 +143,11 @@ export async function postMoves(tx: Executor, moves: NewMove[], by: number | nul
   return written;
 }
 
-async function loadItems(db: Executor): Promise<StockItem[]> {
+export async function loadItems(db: Executor): Promise<StockItem[]> {
   return (await db.select().from(t.ingredients).orderBy(asc(t.ingredients.sort), asc(t.ingredients.id))).map(toItem);
 }
 
-async function loadFormulas(db: Executor): Promise<(Formula & { id: number })[]> {
+export async function loadFormulas(db: Executor): Promise<(Formula & { id: number })[]> {
   return db.select().from(t.productionFormulas).orderBy(asc(t.productionFormulas.id));
 }
 
@@ -656,6 +657,8 @@ export type StockRowView = {
   countClass: StockItem["countClass"];
   countRoles: Role[];
   countTolerancePct: number;
+  /** Mảng dùng (food cost theo mảng, M11). */
+  segment: Segment;
   /** Chỉ owner/manager. */
   avgCost?: number;
   value?: number;
@@ -695,6 +698,7 @@ export async function loadStockView(viewer: OpsActor, now: Date, db: Db = getDb(
       unit: i.unit,
       level: i.level,
       storage: "",
+      segment: "pizza",
       trackStock: i.trackStock,
       onHand,
       parLevel: i.parLevel,
@@ -710,8 +714,13 @@ export async function loadStockView(viewer: OpsActor, now: Date, db: Db = getDb(
       ...(manager ? { avgCost: i.avgCost, value: valueOf(onHand, i.avgCost) } : {}),
     };
   });
-  const storage = new Map((await db.select({ id: t.ingredients.id, storage: t.ingredients.storage }).from(t.ingredients)).map((r) => [r.id, r.storage]));
-  for (const r of rows) r.storage = storage.get(r.id) ?? "";
+  const extra = new Map(
+    (await db.select({ id: t.ingredients.id, storage: t.ingredients.storage, segment: t.ingredients.segment }).from(t.ingredients)).map((r) => [r.id, r]),
+  );
+  for (const r of rows) {
+    r.storage = extra.get(r.id)?.storage ?? "";
+    r.segment = extra.get(r.id)?.segment ?? "pizza";
+  }
 
   // Kiểm nhanh: lần đếm gần nhất của từng mục (từ các lần đếm 60 ngày qua).
   const counts = await db
@@ -804,7 +813,7 @@ export async function loadStockView(viewer: OpsActor, now: Date, db: Db = getDb(
 export type StockItemInput = Pick<
   StockItem,
   "level" | "trackStock" | "purchaseUnit" | "purchaseFactor" | "shelfLifeHours" | "parLevel" | "aliases" | "countClass" | "countRoles" | "countTolerancePct"
-> & { id: string };
+> & { id: string; segment?: Segment };
 
 /** Sửa hồ sơ kho của một nguyên liệu (owner/manager). Giá vốn không sửa tay — đi qua nhập kho/kiểm kê. */
 export async function saveStockItemCore(input: StockItemInput, ctx: Ctx): Promise<{ ok: true } | Fail> {
