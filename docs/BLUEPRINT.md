@@ -1159,9 +1159,9 @@ Gửi trong `after()` để không làm chậm phản hồi cho khách; lỗi g�
 | LCP (ảnh ô Combo) | ≤ 2,0 s |
 | INP | ≤ 150 ms |
 | CLS | ≤ 0,05 (skeleton Oven Bar cùng chiều cao) |
-| JS tải lần đầu trang `/` | ≤ 110 KB gzip |
+| JS tải lần đầu trang `/` | ≤ 180 KB gzip (✅ chốt 31/10/2026; gồm framework ≈ 139 KB) |
 
-> ⚠ **Đo ở M0 (31/10/2026):** riêng runtime Next 16.3 + React 19.2 (trang `/` chưa có client component nào của app) đã ≈ **139 KB gzip** cho trình duyệt hiện đại (chưa tính 39 KB polyfill `noModule`). Mục tiêu 110 KB không đạt được với framework hiện tại → **chờ chủ quán/tech lead chốt**: nâng ngân sách tổng (đề xuất ≤ 180 KB) hoặc đo riêng JS của app (đề xuất ≤ 40 KB gzip trên nền framework).
+> ✅ **Chủ quán chốt (31/10/2026):** tổng JS trang `/` ≤ **180 KB gzip** cho trình duyệt hiện đại (không tính polyfill `noModule`). Lý do: riêng runtime Next 16.3 + React 19.2 đã ≈ 139 KB nên mục tiêu cũ 110 KB không khả thi. Sau M3 đo được ≈ 170 KB (app ≈ 31 KB) — phần app nên giữ ≤ 40 KB.
 
 | Tổng ảnh màn hình đầu | ≤ 350 KB (AVIF/WebP qua `next/image`, `images.formats: ['image/avif','image/webp']`) |
 

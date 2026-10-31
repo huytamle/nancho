@@ -21,7 +21,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M0 — Dọn nền** | ✅ trên `main` | `1341efc` |
 | **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
 | **M2 — DB & DAL** | ✅ | `bf92fda` |
-| **M3 — Giao diện đặt món** | ✅ (xem commit M3) | — |
+| **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
 | M4 — Đặt đơn thật | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
@@ -54,12 +54,12 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 6. (M1) Prep trả `split`/`byProduct` **có cấu trúc** — UI tự trình bày (tên ngắn, định dạng). Điểm giao trong tuyến: theo khu vực rồi số thứ tự (Phụ lục B đã sửa cho khớp).
 7. (M1) Quyền: bếp được bàn giao đơn nhận tại quầy (`ready → completed/no_show`) vì bếp = Rêu; shipper được `ready → delivering`, không được huỷ.
 8. (M1) Regex chuyển khoản có `(?!\d)` để không khớp nhầm số tham chiếu ngân hàng dính liền.
+9. **Ngân sách JS trang `/` ≤ 180 KB gzip** (chủ quán chốt 31/10/2026; framework ≈ 139 KB, app nên ≤ 40 KB). Sau M3: ≈ 170 KB.
 
 ## Câu hỏi đang treo cho chủ quán
 
-1. **Ngân sách JS §13.1:** runtime Next 16 + React 19 ≈ 139 KB gzip > 110 KB. Sau M3: tổng ≈ **170 KB** (app ≈ 31 KB) — đạt cả hai phương án đề xuất (tổng ≤ 180 KB / app ≤ 40 KB). Chờ chốt con số chính thức.
-2. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
-3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
+1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
+2. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
 ## M2 — đã làm
 
