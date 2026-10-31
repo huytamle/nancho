@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.4 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Phiên bản:** 1.5 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.5:** ✅ Thêm **vận hành nội bộ** `/admin/van-hanh` (§17, M7–M11): vai trò nhiều giá trị, ca & két, hộp chi, chi phí qua Telegram, checklist, sổ tay, chấm công, bảng công/lương, kho 2 mức, chỉ số · route mới ở §5.4 · SePay phân loại khoản không mã đơn thành doanh thu café (§17.9).
 > **Thay đổi 1.4 (M2):** `slot_templates` thêm `UNIQUE (weekday, ready_time)`; thêm CHECK thời gian mẻ (`cutoff_at ≤ oven_at ≤ ready_at`), `order_items.line_total = unit_price × qty` (§6.2) · `ensureBatches` chỉ sinh mẻ cho ngày **chưa có** `service_days` (§15 M2) · dev dependency `tsx` cho script seed (§5.2).
 > **Thay đổi 1.3 (M1):** `priceOrder` trả kết quả có kiểu (§7.4) · làm rõ quyền bếp/shipper (§7.5) · Prep trả `split`/`byProduct` có cấu trúc thay cho chuỗi `breakdown`, điểm giao trong tuyến xếp theo khu vực rồi số thứ tự (§7.6, Phụ lục B) · regex mã chuyển khoản chặn số dính liền (§7.8) · seed Phụ lục A ở `data/seed.ts`.
 > **Thay đổi 1.2:** ✅ Giữ **Café, KOLD Gelato và Đặt bàn** của quán THE HEAT thành mục riêng `/tai-quan` (§5.4) — không thuộc luồng đặt món · Thêm token `--on-accent` (chữ đen trên nền cam, §9.1) · M0 hoàn tất.
@@ -30,6 +31,7 @@
 14. [Chiến lược kiểm thử](#14-chiến-lược-kiểm-thử)
 15. [Lộ trình triển khai (Milestones cho Agent)](#15-lộ-trình-triển-khai-milestones-cho-agent)
 16. [Quyết định cần chủ quán chốt (kèm mặc định)](#16-quyết-định-cần-chủ-quán-chốt-kèm-mặc-định)
+17. [Vận hành nội bộ `/admin/van-hanh` (M7–M11)](#17-vận-hành-nội-bộ-adminvan-hanh-m7m11)
 - [Phụ lục A — Seed data mẫu](#phụ-lục-a--seed-data-mẫu)
 - [Phụ lục B — Bộ dữ liệu kiểm thử Prep (khớp ví dụ trong brief)](#phụ-lục-b--bộ-dữ-liệu-kiểm-thử-prep-khớp-ví-dụ-trong-brief)
 
@@ -265,9 +267,11 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | `/admin/login` | Đăng nhập nhân viên (tên + PIN) | |
 | `/admin/kitchen` | **Dashboard bếp** (tab: Chuẩn bị · Mẻ nướng · Đơn · Giao · Cài đặt) | Query `?ngay=`, `?tab=` |
 | `/admin/kitchen/in` | Bản in Bảng Tổng Hợp (khổ A4/A5 hoặc giấy nhiệt 80 mm) | |
+| `/admin/van-hanh` | ✅ (v1.5) **Vận hành nội bộ** (tab: Ca · Chi · Việc · Sổ tay · Công · Lương · Kho · Chỉ số) | Query `?tab=`, `?trang=` (sổ tay), `?ky=YYYY-MM` — §17 |
 | `GET /api/oven` | Trạng thái lò cho client poll | Public, cache 10 s |
 | `GET /api/cron/daily` | Tạo mẻ cho N ngày tới; gửi Telegram tổng hợp sau giờ chốt | Bảo vệ bằng header `Authorization: Bearer ${CRON_SECRET}` |
 | `POST /api/webhooks/sepay` | Nhận giao dịch chuyển khoản | Xác thực API key header; idempotent theo mã giao dịch |
+| `POST /api/webhooks/telegram` | ✅ (v1.5) Lệnh `/chi`, ảnh hoá đơn, nút bấm, liên kết tài khoản | Header `X-Telegram-Bot-Api-Secret-Token`; idempotent theo `update_id` — §17.4 |
 | `app/manifest.ts`, `robots.ts`, `sitemap.ts`, `icon`, `opengraph-image` | Metadata | `/admin`, `/o` bị `disallow` |
 
 ### 5.5 Cấu trúc thư mục đích
@@ -357,6 +361,8 @@ docs/BLUEPRINT.md  docs/MARKETING.md
 | `VIETQR_BANK_NAME` | tuỳ chọn | Tên ngân hàng hiện cạnh số TK |
 | `SEPAY_WEBHOOK_KEY` | M6 | Xác thực webhook |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Phương án B | Khoá cố định khi tự host nhiều instance |
+| `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` | M7 | Webhook bot vận hành (§17.4) |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | M7 | **Chỉ server** — Storage ảnh hoá đơn/báo cáo Sapo |
 
 Không commit file `.env*` (đã có trong `.gitignore`). Thêm `.env.example` liệt kê tên biến.
 
@@ -460,7 +466,7 @@ staff        settings        rate_limits        (GĐ2: waitlist, day_stock)
 
 **`payments`**: `id`, `order_id` FK null (null nếu chưa khớp), `provider` (`sepay`·`manual`), `provider_txn_id` UNIQUE, `amount`, `memo`, `raw` jsonb, `created_at`.
 
-**`staff`**: `id`, `name`, `role` enum `owner·kitchen·shipper`, `pin_hash`, `is_active`.
+**`staff`**: `id`, `name`, `role` enum `owner·kitchen·shipper`, `pin_hash`, `is_active`. **M7:** đổi thành `roles` mảng enum `owner·manager·kitchen·server·barista·shipper` + `telegram_user_id` bigint null UNIQUE (§17.2). Bảng vận hành: §17.
 
 **`settings`** (key/value jsonb, các key cố định, kiểu được định nghĩa trong `lib/domain/types.ts`):
 
@@ -1091,6 +1097,8 @@ CSS `@media print` cho A5 và giấy nhiệt 80 mm (`@page { size: 80mm auto; ma
 | Đánh dấu đã trả tiền, huỷ sau khi nướng | ✅ | ❌ | ❌ |
 | Cài đặt | ✅ | ❌ | ❌ |
 
+Từ M7 nhân viên có thể kiêm nhiều vai trò và có thêm `manager · server · barista` — bảng quyền vận hành ở §17.2. `manager` có quyền dashboard bếp như `kitchen`.
+
 ---
 
 ## 11. Thanh toán & thông báo
@@ -1104,7 +1112,7 @@ CSS `@media print` cho A5 và giấy nhiệt 80 mm (`@page { size: 80mm auto; ma
 ### 11.2 SePay webhook (M6)
 
 - Chủ quán đăng ký SePay, liên kết tài khoản nhận, cấu hình webhook tới `/api/webhooks/sepay` kèm API key.
-- Xử lý: xác thực header → lưu `payments` (idempotent theo `provider_txn_id`) → tìm mã đơn trong nội dung → nếu `amount ≥ order.total` → `payment_status = paid`, ghi event, nếu `placed` thì chuyển `confirmed` → Telegram "💰 #12 đã chuyển khoản 458.000đ". Không khớp → lưu `order_id = null` và cảnh báo Telegram để chủ quán khớp tay.
+- Xử lý: xác thực header → lưu `payments` (idempotent theo `provider_txn_id`) → tìm mã đơn trong nội dung → nếu `amount ≥ order.total` → `payment_status = paid`, ghi event, nếu `placed` thì chuyển `confirmed` → Telegram "💰 #12 đã chuyển khoản 458.000đ". Không khớp → lưu `order_id = null` và cảnh báo Telegram để chủ quán khớp tay. **Từ M7:** khoản không có mẫu mã đơn = doanh thu café, không cảnh báo (§17.9).
 - **Agent phải đọc tài liệu SePay hiện hành** để lấy đúng tên trường payload và cách xác thực; không đoán.
 
 ### 11.3 Telegram (M4)
@@ -1248,6 +1256,26 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** chuyển khoản thử → đơn tự `paid` + Telegram; Lighthouse mobile ≥ 95 Performance/100 Accessibility/100 SEO.
 - Ghi chú triển khai: thuần ở `lib/payments.ts` (link VietQR, zod payload SePay), env ở `lib/server/payments/vietqr.ts`, đối soát ở `lib/server/payments/sepay.ts` (`recordSepayCore`). `payments.provider_txn_id = "sepay:<id>"` (UNIQUE → SePay gửi lại/song song chỉ ghi một lần). Dò mã đơn trong `code + content + description`; **cộng mọi khoản SePay của đơn** ≥ `total` → `settlePaid` (dùng chung với [Đã trả]: `paid`, `payment_method = transfer`, tự xác nhận `placed`); thiếu → Telegram "chuyển thiếu"; đơn đã trả/đã huỷ → "kiểm tra hoàn tiền"; không khớp → `order_id null` + Telegram. Tiền ra (`out`) bỏ qua. Lỗi DB → 500 để SePay thử lại. Khối CK dùng chung `components/store/transfer-box.tsx` (màn thành công + `/o/[token]`): QR, STK, chủ TK, [Lưu mã QR] (mở ảnh — `download` không chạy với ảnh khác origin), [Sao chép STK], [Sao chép nội dung]. `/m/[slug]` = `StorePage` dùng chung với `/`, sheet đọc món từ đường dẫn (`productFromPath`), mở/đóng sheet trên `/m/*` đưa URL về `/`. OG từng món: font Be Vietnam Pro (OFL, `assets/og/`, lấy từ `@fontsource`). `?src=`: `proxy.ts` (matcher chỉ khi có query `src`) ghi cookie `th_src` 30 ngày (không httpOnly) → `orders.source`; analytics `@vercel/analytics` (chỉ render khi `VERCEL`), `beforeSend` che token `/o/<token>`. `instrumentation.ts` gửi Telegram ≤ 1 tin/phút/instance. Cron daily thêm: xoá `address_text/lat/lng` của đơn > 90 ngày (thời hạn ở `lib/privacy.ts`, trang `/chinh-sach` đọc cùng hằng số).
 
+### M7 — Vận hành: nền, ca & két, chi phí, Telegram (≈ 4 ngày)
+- `staff.roles` (migration), phân công vai trò, khung `/admin/van-hanh`, `ops_events`. Ca: mở/đóng, đếm két & hộp chi theo mệnh giá (đếm mù), nhập doanh thu Sapo + ảnh, nộp tiền về chủ, nạp bù hộp chi. Chi phí trong app + `POST /api/webhooks/telegram` (`/chi`, `/chihuy`, `/tonghop`, ảnh trả lời, nút, liên kết tài khoản), tiền túi chờ duyệt/hoàn. SePay `payments.category` (§17.9). Supabase Storage bucket riêng tư `ops`.
+- **Chấp nhận:** `cash.ts`, `money-text.ts`, `expense-command.ts` coverage ≥ 95% (gồm mọi dạng số tiền ở §17.4); int test: số đáng có của két (COD + café − nộp), bất biến hộp chi qua chi → kiểm → nạp bù, người duyệt ≠ người chi, webhook Telegram sai secret 401 / gửi lại `update_id` không ghi đôi / người lạ bị bỏ qua, SePay không mã → `cafe` không cảnh báo; e2e: mở → đóng ca trên iPhone 13, axe 0 lỗi nghiêm trọng.
+
+### M8 — Checklist & Sổ tay (≈ 2,5 ngày)
+- Mẫu + lượt checklist theo vai trò, giá trị đo có ngưỡng, ảnh; sổ tay Markdown (`marked`, chỉ server) theo vai trò, công thức pizza đọc `recipe_lines`.
+- **Chấp nhận:** vai trò không được gắn mở trang sổ tay → không thấy nội dung (int test DTO); nhiệt độ ngoài ngưỡng → Telegram; e2e làm checklist mở ca.
+
+### M9 — Chấm công, bảng công, lương (≈ 3 ngày)
+- Vào/ra ca, cờ `off_site`/`forgot_out`, lịch ca tuần, `worktime.ts`, bảng công (gửi → xác nhận bằng PIN → khoá, snapshot + hash), `pay_rates` có lịch sử + chặn dưới mức tối thiểu, `payslips`, cron ngày 1/3/5.
+- **Chấp nhận:** `worktime.ts`/`payroll.ts` coverage ≥ 95% (ca qua nửa đêm, ngày lễ, ban đêm, đổi đơn giá giữa tháng); int test: **DTO cho `manager` không chứa trường tiền lương**, manager không tự xác nhận/duyệt bảng công của mình, bảng công đã khoá không sửa được.
+
+### M10 — Kho 2 mức cho pizza (≈ 4 ngày)
+- Cột kho trên `ingredients`, `production_formulas`, `stock_moves`, `stock_counts`; nhập từ `/chi`, sản xuất, trừ khi Ra lò, huỷ, kiểm kê tuần, cột Tồn ở tab Chuẩn bị, cảnh báo hết hạn/dưới mức.
+- **Chấp nhận:** `stock.ts` coverage ≥ 95% (bình quân gia quyền, đổi đơn vị, sản xuất, hao hụt); int test: Ra lò hai lần chỉ trừ một lần, `no_show` vẫn trừ, `cancelled` không trừ; với Phụ lục B tồn sau ngày khớp từng dòng.
+
+### M11 — Chỉ số & kho café (≈ 2–3 ngày)
+- Bảng chỉ số §17.10; định lượng đồ uống; nhập Excel báo cáo Sapo (cần file mẫu từ chủ quán) — chưa có thì kiểm kê tuần.
+- **Chấp nhận:** manager không thấy chi phí nhân sự; số liệu khớp bộ dữ liệu mẫu một tháng.
+
 ### Giai đoạn 2 (sau ra mắt, theo dữ liệu thật)
 Suất muộn từ đế dự phòng · Danh sách chờ khi kín lò · Tồn kho theo ngày (`day_stock`) cho túi BBQ · Ship chung tuyến · Tem tích điểm & giới thiệu bạn · Zalo ZNS · Nhãn in dán hộp · Link bàn giao cho Rêu có token (xem không cần đăng nhập) · Báo cáo tuần (doanh thu, tỉ lệ lấp đầy lò, khách quay lại, hiệu quả từng `src`).
 
@@ -1272,6 +1300,181 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 11 | Hosting: Vercel Pro (~20 USD/tháng, ít vận hành) hay VPS (~150–300 nghìn/tháng, cần người vận hành)? | Vercel Pro + **Supabase** (gói Free khi phát triển; **Pro ~25 USD/tháng khi chạy thật** vì gói Free tạm dừng dự án sau 7 ngày không hoạt động và không có sao lưu tự động) |
 | 12 | Thông tin pháp lý footer (hộ kinh doanh, MST/ĐKKD, email) | Placeholder, chặn ra mắt nếu chưa có |
 | 13 | Ảnh chụp mới: Pizza Phô mai Bơ tỏi, BBQ #2, Combo, hũ sốt, chai cold brew Rêu | Dùng ảnh hiện có làm tạm |
+| 14 | **Thưởng doanh thu 1%** tính trên doanh thu nào (café + pizza? trước/sau giảm giá) và chia thế nào (mỗi người 1% hay một quỹ 1% chia theo giờ công)? | Quỹ = 1% tổng doanh thu tháng (café theo Sapo + đơn pizza hoàn tất), chia theo tỉ lệ giờ công |
+| 15 | **Thưởng tuân thủ:** bao nhiêu tiền, tiêu chí? | 300.000đ/tháng khi: đi muộn ≤ 2 lần, checklist ≥ 95%, lệch két ca mình ≤ 20.000đ; owner sửa được trước khi duyệt |
+| 16 | Quán có mở sau 22:00 không? Ai là quản lý? | Có tính phụ cấp đêm 30% nếu có; vai trò gán trong app |
+| 17 | Tài khoản nhận tiền | ✅ **Đã chốt (uỷ quyền):** một TK VietinBank hộ kinh doanh cho pizza + café, QR tĩnh ở quầy, SePay phân loại (§17.9). ⏳ Kiểm tra SePay hỗ trợ VietinBank + hạn mức giao dịch |
+| 18 | Vận hành: lương theo người, kỳ tháng, không tạm ứng, trả ngày 5; hộp chi 1.000.000đ; chi từ hộp chi hoặc tiền túi rồi hoàn; vùng III (20.000đ/giờ) | ✅ **Đã chốt** 31/10/2026 (§17) |
+
+---
+
+## 17. Vận hành nội bộ `/admin/van-hanh` (M7–M11)
+
+> ✅ Chủ quán chốt 31/10/2026. **Không làm POS** — café bán qua **Sapo** (gói không có API). Quán tại chỗ THE HEAT, café và app pizza **chung sổ sách**. Hiện 2 nhân viên làm theo giờ, mỗi người có điện thoại riêng.
+
+### 17.1 Nguyên tắc
+
+1. **Không ai tự duyệt cho chính mình.** Quản lý duyệt công của nhân viên; chủ quán duyệt công, chi tiền túi và lương của quản lý.
+2. **Quản lý không thấy tiền lương** (đơn giá, phiếu lương, chi phí nhân sự). Ràng buộc nằm ở DTO phía server, không phải ẩn trên UI → có integration test khẳng định DTO trả cho `manager` không có trường tiền lương.
+3. **Đếm mù:** đếm két/hộp chi xong mới thấy số lệch.
+4. **Một lần nhập, nhiều nơi dùng:** nhắn `/chi` trên Telegram = chi phí + (nếu là nguyên liệu) nhập kho; đơn pizza ra lò = tự trừ kho; tiền chuyển khoản không mã đơn = doanh thu café để đối soát với số Sapo.
+5. Logic thuần trong `lib/domain/` (ngưỡng coverage 95% như cũ): `cash.ts`, `money-text.ts` (đọc "150k", "1tr2", "1.200.000"), `expense-command.ts`, `worktime.ts`, `payroll.ts`, `stock.ts`, `checklist.ts`.
+6. Mọi thao tác ghi `ops_events` (`actor`, `type`, `data`, `created_at`) — nhật ký kiểm toán như `order_events`.
+
+### 17.2 Vai trò & phân quyền
+
+`staff.role` (một giá trị) → **`staff.roles`** mảng enum `owner · manager · kitchen · server · barista · shipper` (migration: `roles = ARRAY[role]`). Một người kiêm nhiều vai trò. **Owner và manager phân công vai trò**; manager không cấp/thu `owner`, `manager`. `requireStaff(roles?)` đạt khi giao nhau khác rỗng.
+
+| Quyền | owner | manager | kitchen · server · barista · shipper |
+|---|---|---|---|
+| Mở/đóng ca, đếm két, nhập doanh thu Sapo | ✅ | ✅ | ✅ (ca mình) |
+| Chi tiền (hộp chi · tiền túi · chuyển khoản) | ✅ | ✅ (luôn có ghi chép) | ❌ |
+| Duyệt hoàn tiền túi | ✅ | của nhân viên (không phải của mình) | ❌ |
+| Checklist | ✅ sửa mẫu | ✅ sửa mẫu, xem tất cả | làm checklist vai trò mình |
+| Sổ tay (quy trình/công thức) | ✅ tất cả, sửa | ✅ tất cả, sửa | chỉ trang gắn vai trò mình |
+| Chấm công | ✅ | ✅ | ✅ (của mình) |
+| Bảng công | gửi cho manager · xem tất cả | gửi cho nhân viên · sửa giờ có lý do | xác nhận của mình |
+| Đơn giá & bảng lương | ✅ duy nhất | ❌ | phiếu lương của mình |
+| Kho | ✅ | ✅ | kitchen/barista: sản xuất, huỷ, kiểm kê |
+| Chỉ số | đầy đủ | không có số tiền lương | ❌ |
+
+Vào `/admin`: có `kitchen`/`shipper` → `/admin/kitchen` như cũ; chỉ có `server`/`barista` → `/admin/van-hanh`. Thanh điều hướng admin có lối sang lại giữa hai khu.
+
+### 17.3 Ca làm, két & hộp chi (M7)
+
+**Mệnh giá** (`lib/domain/cash.ts`): `500000 · 200000 · 100000 · 50000 · 20000 · 10000 · 5000 · 2000 · 1000 · 500`. Nhập số tờ → tổng tự cộng (số nguyên VND).
+
+**Két (`register`)** — tiền bán hàng:
+- **Mở ca:** đếm két theo mệnh giá. Lệch so với lần đóng ca trước → cảnh báo ngay.
+- **Đóng ca:** (1) đếm két (đếm mù); (2) nhập doanh thu café **từ báo cáo chốt ca Sapo**: tiền mặt, chuyển khoản, khác — **bắt buộc kèm ảnh** báo cáo Sapo; (3) nộp tiền về chủ (nếu có).
+- **Số đáng có** = đầu ca + tiền mặt café (Sapo) + COD pizza hoàn tất trong ca (`payment_method = cod`, `completed`) − tiền nộp về chủ. **Lệch** = đếm thật − đáng có. Lệch ≠ 0 → Telegram; vượt `settings.ops.cashTolerance` (mặc định 20.000đ) → ⚠.
+- **Đối soát chuyển khoản café:** Σ khoản SePay không mã đơn trong khung giờ ca (§17.9) so với số "chuyển khoản" nhập từ Sapo → hiện chênh lệch.
+- **Chi phí không lấy từ két** (chủ quán chốt).
+
+**Hộp chi (`petty`)** — quỹ định mức **1.000.000đ** (`settings.ops.pettyFloat`):
+- Bất biến: *tiền trong hộp + Σ chứng từ chi từ hộp chưa nạp bù = định mức*.
+- **Kiểm hộp** (đếm theo mệnh giá, bất kỳ lúc nào, mặc định lúc đóng ca) → lệch hiện ngay.
+- **Nạp bù:** chủ quán bấm [Nạp bù] → số tiền = Σ chứng từ kể từ lần nạp trước → các chứng từ đó được đóng kỳ.
+
+**Bảng:**
+- `shifts`: `id`, `service_date`, `opened_by`, `opened_at`, `closed_by`, `closed_at`, `status` (`open·closed`), `cafe_cash`, `cafe_transfer`, `cafe_other` (int null), `sapo_photo` (đường dẫn Storage), `note`. Tối đa một ca `open` (partial unique index).
+- `cash_counts`: `id`, `box` (`register·petty`), `kind` (`open·close·check·replenish·drop`), `shift_id` null, `counts` jsonb `{ "500000": 2, … }`, `total` int (CHECK = tổng tính lại ở DAL, test), `expected` int null, `counted_by`, `created_at`, `note`.
+
+### 17.4 Chi phí & Telegram (M7)
+
+**Nguồn tiền** (`source`): `petty` (hộp chi, mặc định) · `pocket` (tiền túi, chờ hoàn) · `bank` (chuyển khoản từ TK hộ kinh doanh). Chỉ `owner`/`manager` ghi chi.
+
+**Cú pháp** (bot giữ **privacy mode bật** → chỉ nhận lệnh `/…` và tin trả lời bot; không đọc chuyện trong nhóm):
+
+```
+/chi 150k đá viên              → hộp chi, nhóm tự đoán theo từ khoá
+/chi 1tr2 phô mai 5kg #tui     → tiền túi; "phô mai 5kg" khớp nguyên liệu → hỏi nhập kho (M10)
+/chi 320.000 gas #ck           → chuyển khoản
+/chihuy C123                   → huỷ trong 24 giờ (chỉ người ghi hoặc owner)
+/tonghop                       → tổng chi tháng này theo nhóm & nguồn
+```
+
+- Bot trả lời: "🧾 C123 · 150.000đ · Nguyên liệu café · Hộp chi · Lan" + nút [Đổi nhóm] [Huỷ] + "↩ Trả lời tin này bằng ảnh hoá đơn". Ảnh trả lời → tải qua `getFile`, lưu **Supabase Storage** bucket riêng tư `ops` (REST bằng `fetch`, không thêm thư viện), giữ cả `telegram_file_id`.
+- Số tiền đọc bằng `money-text.ts`: `150k`, `150 k`, `1tr2`, `1,2tr`, `1.200.000`, `85000`. Không đọc được → bot trả lời cú pháp mẫu, không ghi.
+- Nhóm chi phí (owner sửa): Nguyên liệu pizza · Nguyên liệu café · Bao bì · Gas/điện/nước · Sửa chữa · Vệ sinh · Marketing · Khác. Từ khoá đoán nhóm nằm trong `settings.ops.expenseKeywords`.
+- **Liên kết tài khoản:** trong app [Liên kết Telegram] → link `t.me/<bot>?start=<token 10 phút>` → bot lưu `staff.telegram_user_id`. Tin từ người chưa liên kết hoặc nhóm lạ → bỏ qua (chỉ trả lời "chưa liên kết").
+- **Tiền túi:** trạng thái `pending → approved → reimbursed` (hoặc `rejected`). Người duyệt ≠ người chi (§17.1). Hoàn từ hộp chi thì ghi thêm một chứng từ `petty` liên kết.
+- **Tổng hợp:** cron ngày 1 gửi tổng chi tháng trước theo nhóm/nguồn, so với tháng trước kia.
+- Cũng nhập được trong app (form + ảnh chụp) cho ai không tiện dùng Telegram.
+
+**Route:** `POST /api/webhooks/telegram` — xác thực header `X-Telegram-Bot-Api-Secret-Token` (= `TELEGRAM_WEBHOOK_SECRET`, so sánh hằng thời gian), chỉ nhận `TELEGRAM_CHAT_ID`/`TELEGRAM_OPS_CHAT_ID` và chat riêng của người đã liên kết; idempotent theo `update_id`. **Agent đọc tài liệu Bot API hiện hành** trước khi code (setWebhook, callback_query, getFile).
+
+**Bảng `expenses`:** `id`, `code` (`C123`), `spent_at`, `amount` int > 0, `category`, `description`, `source`, `spent_by`, `status` (`recorded·pending·approved·rejected·reimbursed`), `approved_by` null, `reimbursed_by_expense_id` null, `replenish_id` null (đợt nạp bù hộp chi), `photo` null, `telegram_file_id` null, `telegram_msg_id` null, `cancelled_at` null, `created_at`.
+
+### 17.5 Checklist hằng ngày (M8)
+
+- `checklist_templates`: `id`, `title`, `roles[]`, `moment` (`open·during·close·weekly`), `items` jsonb `[{ id, label, photo?: bool, value?: { unit: "°C", min?, max? } }]`, `sort`, `is_active`.
+- `checklist_runs`: `template_id`, `service_date`, `done` jsonb `{ itemId: { by, at, value?, photo? } }`, `completed_at` — UNIQUE `(template_id, service_date)`; nhiều người cùng tick một danh sách.
+- Mục có `value` ngoài khoảng (VD tủ mát > 5 °C) → Telegram ⚠ ngay.
+- Đóng ca khi checklist `close` chưa xong → hỏi lại một lần (không chặn cứng).
+- Seed mẫu: Mở ca (bếp/pha chế/phục vụ), Đóng ca, Vệ sinh tuần, Nhiệt độ tủ.
+- Tỉ lệ hoàn thành dùng cho thưởng tuân thủ (§17.7) và chỉ số (§17.10).
+
+### 17.6 Sổ tay: quy trình & công thức (M8)
+
+- `handbook_pages`: `id`, `slug`, `title`, `kind` (`sop·recipe`), `roles[]` (ai được xem; owner/manager luôn xem), `body` (Markdown), `product_id` null, `version`, `updated_by`, `updated_at`.
+- Hiển thị bằng **`marked`** (MIT) **chỉ ở Server Component** → 0 KB JS phía client; HTML qua danh sách thẻ cho phép (không nhúng HTML thô từ nội dung).
+- **Công thức pizza:** trang gắn `product_id` tự hiện bảng định lượng từ `recipe_lines` (một nguồn sự thật, không chép số). Công thức đồ uống: bảng định lượng riêng ở M11 (để trừ kho café).
+- Bảo mật công thức: chỉ vai trò được gắn mới mở được, trang in mờ tên người xem, ghi log lượt xem; không có nút xuất.
+- Route: `/admin/van-hanh?tab=so-tay&trang=<slug>`.
+
+### 17.7 Chấm công, bảng công & lương (M9)
+
+**Chấm công** (điện thoại riêng của nhân viên, đã đăng nhập PIN):
+- [Vào ca] / [Ra ca] một chạm. Server ghi giờ (không tin giờ máy) và IP.
+- **Tại quán?** — IP công khai so với `settings.ops.storeIps`. Owner/manager đang ở quán bấm [Đây là Wi-Fi quán] để cập nhật khi nhà mạng đổi IP. IP lạ → vẫn ghi nhưng gắn cờ `off_site`, quản lý xem lại khi duyệt (**gắn cờ, không chặn**). Không dùng selfie/GPS.
+- Quên ra ca → cron 03:00 gắn cờ `forgot_out`, không tự cộng giờ; quản lý sửa kèm lý do.
+- **Lịch ca** `shift_plans` (`staff_id`, `date`, `start`, `end`): quản lý xếp theo tuần, nút [Chép tuần trước] → dùng để tính đi muộn/về sớm.
+- `time_entries`: `id`, `staff_id`, `clock_in`, `clock_out` null, `in_ip`, `out_ip`, `flags` text[] (`off_site·forgot_out·edited`), `edit_reason` null. Mọi sửa giờ ghi `ops_events`.
+
+**Tính giờ** (`worktime.ts`, giờ VN): cắt mỗi lượt thành phút **thường · ban đêm (22:00–06:00, phụ cấp ≥ 30%) · ngày lễ (`holidays`, hệ số mặc định 3,0) · làm thêm (vượt 8 giờ/ngày, 1,5)**. Bảng `holidays` (`date`, `name`, `multiplier`) do owner nhập; nhắc trước Tết âm lịch mỗi năm. Tính theo phút thực, không làm tròn (owner có thể bật làm tròn ở Cài đặt).
+
+**Bảng công tháng** `timesheets` (`staff_id`, `period` `YYYY-MM`, các tổng phút, số lần muộn, `status`, `snapshot` jsonb, `snapshot_hash`):
+
+```
+draft ─(manager gửi; với bảng công của manager: owner gửi)─▶ submitted
+submitted ─(chính nhân viên xác nhận bằng PIN)─▶ acknowledged   (khoá)
+submitted ─(nhân viên "Chưa đồng ý" + lý do)─▶ draft
+```
+
+**Lương (chỉ owner):**
+- `pay_rates`: `staff_id`, `hourly_rate` int, `effective_from` — **có lịch sử**, tăng lương không làm đổi kỳ cũ. Không cho lưu dưới `settings.payroll.minHourly` (**vùng III: 20.000đ/giờ**, owner cập nhật khi Nhà nước đổi mức).
+- Thưởng: **doanh thu 1%** và **tuân thủ** (cách tính: §16 #14, #15; tiêu chí tuân thủ tính tự động từ đi muộn · checklist · lệch két, owner sửa được). Bao ăn uống không tính vào lương.
+- `payslips`: `staff_id`, `period`, `lines` jsonb (`base · night · overtime · holiday · revenue_bonus · compliance_bonus · adjustment`, mỗi dòng `{ label, minutes?, rate?, amount }`), `total` int, `status` (`draft → approved → paid`), `paid_at`, `paid_method`, `staff_ack_at`. Chỉ tạo từ bảng công đã `acknowledged`.
+- Lịch: **ngày 1** cron tạo bảng công nháp tháng trước + Telegram nhắc → quản lý gửi → nhân viên xác nhận → owner duyệt lương → **trả ngày 5** → nhân viên bấm [Đã nhận lương].
+- Nhân viên xem phiếu lương của mình (bảng kê trả lương — BLLĐ 2019 Điều 95), in/lưu PDF được.
+
+**Xác nhận trên điện thoại, không ký tay** — được (Luật Giao dịch điện tử 2023): người xác nhận nhập lại PIN; lưu ảnh chụp dữ liệu (`snapshot`) + `sha256` + thời điểm + IP + thiết bị; đã khoá thì không sửa — sai thì mở kỳ điều chỉnh. Hợp đồng lao động nên có điều khoản đồng ý xác nhận bảng công/lương qua ứng dụng.
+
+### 17.8 Kho 2 mức (M10 — pizza trước, café ở M11)
+
+**Mức:** `raw` (nguyên liệu mua về: bột, men, phô mai khối, sườn sống) → `prep` (bán thành phẩm: đế Pan đã ủ, túi sườn ướp 500 g, hũ sốt) · `goods` (dùng thẳng: hộp, chai cold brew). Bảng `ingredients` hiện tại là mức `prep`/`goods` → thêm cột, không tạo bảng mới:
+
+`ingredients` + `level`, `track_stock` bool (chỉ ~15 mặt hàng đắt), `purchase_unit` + `purchase_factor` (bao 25 kg = 25.000 g), `avg_cost` numeric(12,4) (đ/đơn vị — **ngoại lệ duy nhất** của luật tiền nguyên: đơn giá theo gram có phần lẻ; mọi **thành tiền** vẫn là int), `shelf_life_hours` null, `par_level` null (mức tối thiểu), `aliases` text[] (khớp chữ trong `/chi`).
+
+- `production_formulas`: `output_id`, `output_qty` (VD 6 đế), `lines` [{ `ingredient_id`, `qty` }] — một mẻ bột ra 6 đế.
+- `stock_moves`: `id`, `ingredient_id`, `qty` numeric (+/−), `kind` (`purchase·produce_in·produce_out·sale·waste·adjust`), `unit_cost`, `ref_type`/`ref_id` (expense/production/batch/count), `expires_at` null, `created_by`, `created_at`. **Tồn = Σ qty.** Không sửa/xoá — sai thì thêm dòng `adjust`.
+- **Nhập:** từ `/chi` khớp `aliases` + số lượng → bot hỏi [Nhập kho 5.000 g Mozzarella] [Chỉ chi phí]; hoặc form trong app. Giá vốn bình quân gia quyền cập nhật khi nhập.
+- **Sản xuất:** [Làm 2 mẻ bột] → trừ nguyên liệu theo công thức, cộng 12 đế, `expires_at = now + shelf_life_hours`.
+- **Bán:** khi mẻ nướng chuyển `done` (Ra lò) → trừ theo `recipe_lines` cho mọi đơn không `cancelled` của mẻ (gồm `no_show` — bánh đã nướng). Idempotent theo mẻ.
+- **Huỷ/hư hỏng:** ghi lý do (hết hạn · rơi · lỗi nướng · khác).
+- **Kiểm kê tuần** `stock_counts`: đếm thật các mặt hàng `track_stock` → dòng `adjust` = thật − sổ → **hao hụt (số lượng & tiền)**.
+- Tab Chuẩn bị (§10.2) thêm cột "Tồn / đủ / thiếu" cạnh mỗi nguyên liệu; dưới `par_level` hoặc sắp hết hạn → Telegram + mục trong checklist mở ca.
+
+### 17.9 Dòng tiền vào: một tài khoản ngân hàng hộ kinh doanh
+
+✅ Chủ quán uỷ quyền quyết định:
+- **Mọi khoản chuyển khoản (pizza + café) về một tài khoản VietinBank của hộ kinh doanh**, liên kết SePay. Không cần rút tay từ MoMo, một sao kê cho kê khai thuế, đối soát tự động.
+- Café: in **QR VietQR tĩnh** (không số tiền, không nội dung) đặt ở quầy. Khách quen dùng MoMo vẫn quét được QR ngân hàng bằng app MoMo. Ví MoMo kinh doanh giữ trong thời gian chuyển đổi; tiền MoMo nhập ở ô "khác" khi đóng ca.
+- **Đổi xử lý SePay (M7):** `payments.category` (`order·cafe·unknown`). Nội dung có mã đơn → như cũ. **Không có mẫu mã đơn** → `cafe`, **không** gửi cảnh báo từng khoản (chỉ vào đối soát ca §17.3). Có mẫu mã `TH…` nhưng không khớp / sai số tiền → cảnh báo như cũ.
+- Trước khi chuyển: kiểm tra gói SePay hỗ trợ VietinBank và hạn mức số giao dịch/tháng (café làm tăng số giao dịch).
+
+### 17.10 Chỉ số quản lý (M11)
+
+| Chỉ số | owner | manager |
+|---|---|---|
+| Doanh thu ngày/tuần/tháng: pizza (đơn hoàn tất) + café (số Sapo theo ca) | ✅ | ✅ |
+| Lệch két & hộp chi theo ca/người | ✅ | ✅ |
+| Chi phí theo nhóm, so với kỳ trước | ✅ | ✅ |
+| Food cost % = (tồn đầu + nhập − tồn cuối) / doanh thu; hao hụt | ✅ | ✅ |
+| **Doanh thu / giờ công** | ✅ | ✅ |
+| Chi phí nhân sự % doanh thu, prime cost | ✅ | ❌ |
+| Checklist hoàn thành %, đi muộn, tỉ lệ lấp đầy lò | ✅ | ✅ |
+
+Kho café (M11): định lượng đồ uống + **nhập file Excel xuất từ báo cáo "bán hàng theo mặt hàng" của Sapo** (tải lên trong app → đọc → trừ kho). Trước khi có file mẫu: chỉ kiểm kê tuần hạt cà phê, sữa, đá… và tính lượng dùng = tồn đầu + nhập − tồn cuối.
+
+### 17.11 Route, env, cron
+
+- Route mới (bổ sung §5.4): `/admin/van-hanh?tab=ca·chi·viec·so-tay·cong·luong·kho·chi-so` (`&trang=` cho sổ tay), `POST /api/webhooks/telegram`.
+- Env mới: `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` (tuỳ chọn, mặc định = `TELEGRAM_CHAT_ID`), `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (**chỉ server**, cho Storage).
+- `settings.ops`: `{ cashTolerance: 20000, pettyFloat: 1000000, storeIps: [], expenseKeywords: {…} }` · `settings.payroll`: `{ minHourly: 20000, payDay: 5, revenueBonusPct: 1, complianceBonus: … }`.
+- Cron daily thêm: gắn cờ quên ra ca, cảnh báo hết hạn/dưới mức tồn; ngày 1: tổng hợp chi phí + bảng công nháp; ngày 3: nhắc ai chưa xác nhận; ngày 5: nhắc trả lương.
+- Trang admin không tính vào ngân sách JS của `/` (§13.1); vẫn giữ nhẹ cho máy Android tầm trung.
 
 ---
 

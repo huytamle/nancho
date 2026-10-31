@@ -27,6 +27,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M5 — Kitchen Dashboard** | ✅ trên `main` | xem `git log` |
 | **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
+| **M7–M11 — Vận hành nội bộ** (Blueprint 1.5 §17) | 📝 đặc tả xong, chờ chủ quán duyệt; **M7 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -60,11 +61,21 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 8. (M1) Regex chuyển khoản có `(?!\d)` để không khớp nhầm số tham chiếu ngân hàng dính liền.
 9. **Ngân sách JS trang `/` ≤ 180 KB gzip** (chủ quán chốt 31/10/2026; framework ≈ 139 KB, app nên ≤ 40 KB). Sau M3: ≈ 170 KB.
 
+## Vận hành nội bộ — đã chốt (31/10/2026, Blueprint §17)
+
+- **Không làm POS.** Café bán qua Sapo (không API) → nhân viên nhập doanh thu từ báo cáo chốt ca Sapo + ảnh. THE HEAT tại chỗ + café + pizza chung sổ.
+- 2 nhân viên theo giờ, điện thoại riêng. Vai trò nhiều giá trị (`owner·manager·kitchen·server·barista·shipper`), owner/manager phân công.
+- Chi phí **không** lấy từ két: hộp chi định mức 1.000.000đ, hoặc tiền túi rồi hoàn; owner/manager chi, luôn ghi. Telegram `/chi` (privacy mode bật).
+- Lương theo người, kỳ tháng, không tạm ứng, trả ngày 5. Vùng III 20.000đ/giờ (thưởng & bao ăn không tính vào mức tối thiểu). Manager duyệt **bảng công** (không thấy tiền); bảng công của manager do owner gửi; xác nhận bằng PIN trên điện thoại.
+- Kho 2 mức (nguyên liệu → bán thành phẩm), pizza trước (M10), café sau (M11, nhập Excel Sapo).
+- Tiền vào: **một TK VietinBank hộ kinh doanh** cho pizza + café (QR tĩnh ở quầy); SePay: khoản không mã đơn = doanh thu café, không cảnh báo.
+
 ## Câu hỏi đang treo cho chủ quán
 
 1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
 2. ✅ (31/10/2026) **Supabase ở Mumbai** (`ap-south-1`) — chủ quán chốt giữ; `/chinh-sach` đã ghi "Ấn Độ (Mumbai)". Function Vercel đã chuyển `sin1` → **`bom1`** (`vercel.json`) để cùng vùng với DB.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
+4. Vận hành §16 #14–#16: cách tính thưởng doanh thu 1% & thưởng tuân thủ, quán có mở sau 22:00 không, ai là quản lý. SePay có hỗ trợ VietinBank không. File Excel mẫu báo cáo Sapo (cho M11).
 
 ## M2 — đã làm
 
