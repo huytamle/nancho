@@ -63,7 +63,7 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 ## Câu hỏi đang treo cho chủ quán
 
 1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
-2. ✅ (31/10/2026) **Supabase ở Mumbai** (`ap-south-1`) — chủ quán chốt giữ; `/chinh-sach` đã ghi "Ấn Độ (Mumbai)". Cân nhắc đổi region function Vercel `sin1` → `bom1` (`vercel.json`) cho gần DB (mỗi truy vấn sin1↔Mumbai ≈ 60 ms khứ hồi).
+2. ✅ (31/10/2026) **Supabase ở Mumbai** (`ap-south-1`) — chủ quán chốt giữ; `/chinh-sach` đã ghi "Ấn Độ (Mumbai)". Function Vercel đã chuyển `sin1` → **`bom1`** (`vercel.json`) để cùng vùng với DB.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
 ## M2 — đã làm
@@ -121,7 +121,7 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - **Auth:** `lib/server/auth/session.ts` (JWT `jose`, cookie `th_s`, `currentStaff` = `cache()`, `requireStaff(roles?)`), `dal/staff.ts` (argon2, chống dò id bằng băm giả), `app/actions/auth.ts` (rate-limit `login:ip` 5/15′), `proxy.ts` (lạc quan), `/admin/login` (chọn tên → PIN 6 số, bàn phím số lớn), script `npm run staff`.
 - **Dashboard** `/admin/kitchen?ngay=&tab=` (tab: `chuan-bi · me · don · giao · cai-dat`; shipper chỉ `giao`, kitchen không có `cai-dat`): `components/admin/*` — `kitchen-dashboard` (refresh 20 s, "Cập nhật x giây trước", banner ngoại tuyến, toast + ding đơn mới, huy hiệu tab Đơn, tab đổi bằng `history.replaceState`), `prep-board` (tick "đã lấy" localStorage theo ngày), `batch-board`, `order-list` + `order-detail-sheet` (nút trạng thái tính bằng `canTransition` phía client), `delivery-board` (copy shipper, bắt đầu tuyến, đã giao/bom, quầy Rêu, chỉ đường), `quick-order-sheet`, `settings-panel`, `wake-lock`. Bản in `/admin/kitchen/in` (A5 / `?kho=80`).
 - **Action** `app/actions/admin.ts`: helper `run(schema, raw, roles, fn)` → zod → quyền → DAL → `refresh()`. `toggleProduct` gọi `updateTag('catalog')`. Schema zod của đơn chuyển sang `lib/server/order-input.ts` (dùng chung web + đơn nhanh).
-- **Cron** `GET /api/cron/daily` (Bearer `CRON_SECRET`, so sánh hằng thời gian) + `vercel.json` (`sin1`, 15:45 VN).
+- **Cron** `GET /api/cron/daily` (Bearer `CRON_SECRET`, so sánh hằng thời gian) + `vercel.json` (region `bom1` từ 31/10/2026, 15:45 VN).
 - **Test:** unit 102 (`lib/__tests__/kitchen-text.test.ts`: Bảng Tổng Hợp Phụ lục B từng dòng) · int 42 (`admin.int.test.ts`: vòng đời + bộ đếm khách, quyền, huỷ trả suất 1 lần, mẻ, đã trả, đổi mẻ, sức chứa, đơn nhanh/vượt chốt, cron gửi 1 lần + thử lại, dọn rate-limit, PIN, JWT) · e2e 57/57 (`e2e/kitchen.spec.ts`: redirect login/sai PIN, Phụ lục B trên tab Chuẩn bị, Đút lò/Ra lò, shipper chỉ tab Giao + giao tuyến, link Telegram + đơn nhanh, axe, không tràn ngang). `e2e/db.ts` thêm `seedStaff()` (PIN 123456) và `seedAppendixB()` (dùng fixture domain). JS `/` ≈ 171 KB gzip.
 
 ## M6 — lưu ý từ M5

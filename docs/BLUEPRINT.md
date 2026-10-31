@@ -235,7 +235,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | Thanh toán | **VietQR** (ảnh QR từ `img.vietqr.io`) + **SePay webhook** (M6) | QR chuẩn Napas, mọi app ngân hàng quét được; SePay báo giao dịch tự động |
 | Script | **`tsx`** (dev) | Chạy `db:seed` bằng TypeScript + alias `@/` với `--conditions=react-server` (để `server-only` không ném lỗi) |
 | Test | **Vitest** (unit/integration), **Playwright** (e2e, viewport iPhone 13 & Pixel 7), `@axe-core/playwright` | Theo `02-guides/testing/*` |
-| Hosting | **Phương án A (khuyến nghị):** Vercel **Pro**, function region `sin1`. **Phương án B (rẻ nhất):** 1 VPS 2 GB (Docker: `next start` standalone + Postgres + Caddy) | Gói Hobby của Vercel chỉ dành cho mục đích **phi thương mại** → app bán hàng cần Pro hoặc tự host. Code không phụ thuộc API riêng của Vercel |
+| Hosting | **Phương án A (khuyến nghị):** Vercel **Pro**, function region `bom1` (Mumbai — cùng vùng Supabase `ap-south-1`). **Phương án B (rẻ nhất):** 1 VPS 2 GB (Docker: `next start` standalone + Postgres + Caddy) | Gói Hobby của Vercel chỉ dành cho mục đích **phi thương mại** → app bán hàng cần Pro hoặc tự host. Code không phụ thuộc API riêng của Vercel |
 | Analytics | Vercel Web Analytics *hoặc* Umami tự host + sự kiện tuỳ chỉnh | Nhẹ, không cookie quảng cáo |
 
 **Không dùng** (và lý do): Redux/Zustand (giỏ hàng nhỏ, `useReducer` + `useSyncExternalStore` đủ), thư viện drawer bên thứ ba (tự dựng trên `<dialog>` để kiểm soát hiệu năng & a11y), Framer Motion (CSS transition + Pointer Events đủ cho bottom sheet), Supabase client trên trình duyệt (DB chỉ truy cập từ server), next-intl (chỉ tiếng Việt).
