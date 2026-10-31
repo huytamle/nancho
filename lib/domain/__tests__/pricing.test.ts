@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { seedPickupPoints, seedZones } from "@/data/seed";
-import { priceOrder, type CartLine, type FulfillmentInput } from "@/lib/domain/pricing";
+import { priceOrder, requiresPrepay, type CartLine, type FulfillmentInput } from "@/lib/domain/pricing";
 import { P } from "./fixtures";
 
 const kp2: FulfillmentInput = { type: "delivery", zone: seedZones[1] }; // 10.000đ
@@ -117,5 +117,19 @@ describe("priceOrder", () => {
       ok: false,
       error: { reason: "unavailable", productIds: ["pepperoni-pan", "cold-brew-reu"] },
     });
+  });
+});
+
+describe("requiresPrepay", () => {
+  const risk = { prepayPolicy: "risk_based", prepayOverTotal: 1_000_000 } as const;
+  it("risk_based: khách từng bom hàng hoặc đơn lớn", () => {
+    expect(requiresPrepay(risk, null, 458_000)).toBe(false);
+    expect(requiresPrepay(risk, { noShowCount: 0 }, 999_999)).toBe(false);
+    expect(requiresPrepay(risk, { noShowCount: 1 }, 100_000)).toBe(true);
+    expect(requiresPrepay(risk, null, 1_000_000)).toBe(true);
+  });
+  it("never / always", () => {
+    expect(requiresPrepay({ ...risk, prepayPolicy: "never" }, { noShowCount: 3 }, 5_000_000)).toBe(false);
+    expect(requiresPrepay({ ...risk, prepayPolicy: "always" }, null, 1)).toBe(true);
   });
 });

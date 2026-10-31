@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { lookupCustomer } from "@/app/actions/customer";
 import { placeOrder } from "@/app/actions/order";
 import { OrderSuccess } from "@/components/store/order-success";
 import { SlotPicker } from "@/components/store/slot-chips";
@@ -10,18 +11,19 @@ import { Sheet } from "@/components/ui/sheet";
 import { Stepper } from "@/components/ui/stepper";
 import { copy, type CheckoutErrorKey } from "@/data/copy";
 import { site } from "@/data/site";
-import { dispatch, type Draft } from "@/lib/client/cart-store";
+import { dispatch, getCart, type Draft } from "@/lib/client/cart-store";
 import { refreshOven } from "@/lib/client/oven-store";
 import { fits, suggestSlot } from "@/lib/domain/capacity";
 import type { SlotView } from "@/lib/domain/oven-status";
-import { formatPhoneInput } from "@/lib/domain/phone";
+import { formatPhoneInput, normalizePhone } from "@/lib/domain/phone";
 import { priceOrder } from "@/lib/domain/pricing";
 import { vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
-import { checkFields, type FieldErrors, type FieldKey, type PlaceOrderResult } from "@/lib/order-contract";
+import { checkFields, type FieldErrors, type FieldKey, type LookupResult, type PlaceOrderResult } from "@/lib/order-contract";
 
 const t = copy.checkout;
 const MIN_FILL_MS = 3000; // server từ chối đơn điền < 3 giây (chống bot) → client tự chờ cho đủ.
+const LOOKUP_DEBOUNCE_MS = 300;
 const FIELD_ORDER: FieldKey[] = ["phone", "name", "zone", "address", "note"];
 const fieldId = (f: FieldKey) => `co-${f}`;
 
@@ -48,11 +50,68 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
   const [success, setSuccess] = useState<Success | null>(null);
   const [showNote, setShowNote] = useState(d.note.length > 0);
   const [pin, setPin] = useState<"idle" | "busy">("idle");
+  const [lookup, setLookup] = useState<LookupResult | null>(null);
+  const [savedChoice, setSavedChoice] = useState<"saved" | "other" | null>(null);
+  const [prepay, setPrepay] = useState(false);
   const idem = useRef<string | null>(null);
   const startedAt = useRef(0);
+  const lookupTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const lookupPhone = useRef("");
+
+  // Tra khách cũ (§7.7): chỉ khi đủ 10 số hợp lệ, debounce 300 ms; bỏ kết quả của số đã bị sửa.
+  function runLookup(phone: string) {
+    lookupPhone.current = phone;
+    clearTimeout(lookupTimer.current);
+    lookupTimer.current = setTimeout(async () => {
+      let res: LookupResult;
+      try {
+        res = await lookupCustomer({ phone });
+      } catch {
+        return;
+      }
+      if (lookupPhone.current !== phone) return;
+      setLookup(res);
+      if (res.status === "new") return;
+      const cur = getCart().draft;
+      const patch: Partial<Draft> = {};
+      if (!cur.name.trim()) patch.name = res.status === "self" ? res.name : res.greetingName;
+      if (res.status === "self") {
+        if (cur.zoneId === null && res.zoneId !== null) patch.zoneId = res.zoneId;
+        if (!cur.addressText.trim() && res.addressText) {
+          patch.addressText = res.addressText;
+          if (res.lat !== null && res.lng !== null) Object.assign(patch, { lat: res.lat, lng: res.lng, accuracy: null });
+        }
+      }
+      if (res.requiresPrepay) {
+        setPrepay(true);
+        patch.paymentMethod = "transfer";
+      }
+      if (Object.keys(patch).length > 0) dispatch({ type: "draft", patch });
+    }, LOOKUP_DEBOUNCE_MS);
+  }
+
+  function changePhone(raw: string) {
+    const phone = formatPhoneInput(raw);
+    set({ phone });
+    const normalized = normalizePhone(phone) ?? "";
+    if (normalized === lookupPhone.current) return;
+    lookupPhone.current = "";
+    clearTimeout(lookupTimer.current);
+    setLookup(null);
+    setSavedChoice(null);
+    setPrepay(false);
+    if (normalized) runLookup(normalized);
+  }
 
   useEffect(() => {
     startedAt.current = Date.now();
+  }, []);
+
+  useEffect(() => {
+    // Nháp còn SĐT từ lần trước → tra luôn để tự điền (cookie "ghi nhớ") hoặc chào khách cũ.
+    const phone = normalizePhone(getCart().draft.phone);
+    if (phone) runLookup(phone);
+    return () => clearTimeout(lookupTimer.current);
   }, []);
 
   if (success) return <OrderSuccess result={success} onDone={onClose} />;
@@ -93,7 +152,9 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
     return p?.isAvailable ? [p] : [];
   });
 
-  const fields = { ...d, fulfillment: isPickup ? ("pickup" as const) : ("delivery" as const) };
+  const known = lookup?.status === "known" ? lookup : null;
+  const savedToken = !isPickup && savedChoice === "saved" ? (known?.savedAddressToken ?? null) : null;
+  const fields = { ...d, fulfillment: isPickup ? ("pickup" as const) : ("delivery" as const), savedAddress: savedToken !== null };
   const clientErrors = checkFields(fields);
   const errorOf = (f: FieldKey): CheckoutErrorKey | undefined =>
     (submitted || touched.has(f) ? clientErrors[f] : undefined) ?? serverErrors[f];
@@ -134,12 +195,14 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
           customer: { phone: d.phone, name: d.name.trim(), remember: d.remember },
           fulfillment: isPickup
             ? { type: "pickup", pickupPointId: pickup.id }
-            : {
-                type: "delivery",
-                zoneId: d.zoneId ?? 0,
-                addressText: d.addressText.trim(),
-                ...(d.lat !== null && d.lng !== null ? { lat: d.lat, lng: d.lng } : {}),
-              },
+            : savedToken
+              ? { type: "delivery", zoneId: d.zoneId ?? 0, savedAddressToken: savedToken }
+              : {
+                  type: "delivery",
+                  zoneId: d.zoneId ?? 0,
+                  addressText: d.addressText.trim(),
+                  ...(d.lat !== null && d.lng !== null ? { lat: d.lat, lng: d.lng } : {}),
+                },
           paymentMethod: d.paymentMethod,
           note: d.note.trim() || undefined,
           website: (document.getElementById("co-website") as HTMLInputElement | null)?.value ?? "",
@@ -157,6 +220,12 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         return;
       }
       setServerErrors(res.reason === "invalid" ? res.fieldErrors : {});
+      // Token địa chỉ cũ hết hạn (30 phút) → mở lại ô mô tả nhà.
+      if (res.reason === "invalid" && res.fieldErrors.address && savedToken) setSavedChoice("other");
+      if (res.reason === "prepay_required") {
+        setPrepay(true);
+        set({ paymentMethod: "transfer" });
+      }
       setFailure({ ...res, at: target.readyLabel });
       if (res.reason === "slot_full" || res.reason === "cutoff_passed") void refreshOven();
       navigator.vibrate?.([12, 60, 12]);
@@ -270,7 +339,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
             inputMode="numeric"
             autoComplete="tel"
             value={d.phone}
-            onChange={(e) => set({ phone: formatPhoneInput(e.target.value) })}
+            onChange={(e) => changePhone(e.target.value)}
             onBlur={() => blur("phone")}
             placeholder="0912 345 678"
             className="input tabular-nums"
@@ -278,6 +347,35 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
             aria-describedby={errorOf("phone") ? `${fieldId("phone")}-err` : undefined}
           />
         </Field>
+        {known ? (
+          <div className="-mt-1 rounded-field bg-elevated px-3 py-2.5 text-sm" role="status">
+            <p>
+              {t.welcomeBack(known.greetingName)}
+              {!isPickup && known.savedAddressToken && known.zoneName && savedChoice === null ? ` ${t.deliverToLast(known.zoneName)}` : ""}
+            </p>
+            {!isPickup && known.savedAddressToken && known.zoneName && savedChoice === null ? (
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSavedChoice("saved");
+                    if (known.zoneId !== null) set({ zoneId: known.zoneId });
+                  }}
+                  className="min-h-11 rounded-full bg-invert px-4 font-semibold text-on-invert"
+                >
+                  {t.useSaved}
+                </button>
+                <button type="button" onClick={() => setSavedChoice("other")} className="min-h-11 rounded-full border border-line px-4 font-medium">
+                  {t.otherAddress}
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : lookup?.status === "self" ? (
+          <p className="-mt-1 text-sm text-secondary" role="status">
+            {t.welcomeBack(lookup.name.trim().split(/\s+/).pop() ?? "")} {t.filledFromLast}
+          </p>
+        ) : null}
         <Field id={fieldId("name")} label={t.name} error={errorOf("name")}>
           <input
             id={fieldId("name")}
@@ -339,24 +437,33 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
                 ))}
               </select>
             </Field>
-            <Field id={fieldId("address")} label={t.address} error={errorOf("address")}>
-              <textarea
-                id={fieldId("address")}
-                rows={2}
-                maxLength={200}
-                autoComplete="street-address"
-                value={d.addressText}
-                onChange={(e) => set({ addressText: e.target.value })}
-                onBlur={() => blur("address")}
-                placeholder={t.addressPlaceholder}
-                className="input min-h-20 resize-none py-3"
-                aria-invalid={!!errorOf("address")}
-                aria-describedby={errorOf("address") ? `${fieldId("address")}-err` : undefined}
-              />
-            </Field>
-            {d.lat !== null ? (
+            {savedToken && known?.zoneName ? (
+              <div className="flex min-h-11 items-center justify-between gap-2 rounded-field border border-line px-3 py-1.5 text-sm">
+                <span>📍 {t.savedAddress(known.zoneName)}</span>
+                <button type="button" onClick={() => setSavedChoice("other")} className="min-h-11 shrink-0 px-2 text-secondary underline">
+                  {t.otherAddress}
+                </button>
+              </div>
+            ) : (
+              <Field id={fieldId("address")} label={t.address} error={errorOf("address")}>
+                <textarea
+                  id={fieldId("address")}
+                  rows={2}
+                  maxLength={200}
+                  autoComplete="street-address"
+                  value={d.addressText}
+                  onChange={(e) => set({ addressText: e.target.value })}
+                  onBlur={() => blur("address")}
+                  placeholder={t.addressPlaceholder}
+                  className="input min-h-20 resize-none py-3"
+                  aria-invalid={!!errorOf("address")}
+                  aria-describedby={errorOf("address") ? `${fieldId("address")}-err` : undefined}
+                />
+              </Field>
+            )}
+            {savedToken ? null : d.lat !== null ? (
               <p className="flex min-h-11 items-center gap-2 text-sm text-live">
-                📍 {t.pinned(d.accuracy ?? 0)}
+                📍 {d.accuracy !== null ? t.pinned(d.accuracy) : t.pinnedBefore}
                 <button type="button" onClick={() => set({ lat: null, lng: null, accuracy: null })} className="min-h-11 px-2 text-secondary underline">
                   {t.unpin}
                 </button>
@@ -374,11 +481,12 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
       <Section title={t.payment}>
         <div className="space-y-1">
           {(["cod", "transfer"] as const).map((m) => (
-            <label key={m} className="flex min-h-11 cursor-pointer items-center gap-3 text-[15px]">
+            <label key={m} className={`flex min-h-11 items-center gap-3 text-[15px] ${prepay && m === "cod" ? "opacity-50" : "cursor-pointer"}`}>
               <input
                 type="radio"
                 name="payment"
                 checked={d.paymentMethod === m}
+                disabled={prepay && m === "cod"}
                 onChange={() => set({ paymentMethod: m })}
                 className="size-5 accent-[var(--accent)]"
               />
@@ -386,6 +494,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
             </label>
           ))}
         </div>
+        {prepay ? <p className="mt-1 text-sm text-secondary">{t.prepayNote}</p> : null}
       </Section>
 
       <div className="space-y-2">
@@ -540,14 +649,22 @@ function FailureBanner({
           {t.paused}
         </p>
       );
+    case "prepay_required":
+      return (
+        <p role="alert" className={`${box} border-warn/50`}>
+          {t.prepayNote}
+        </p>
+      );
     default:
       return (
         <div role="alert" className={`${box} border-danger/50`}>
-          <p>{t.failed}</p>
+          <p>{failure.reason === "rate_limited" ? t.rateLimited : failure.reason === "contact_us" ? t.contactUs : t.failed}</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button type="button" onClick={onRetry} className="min-h-11 rounded-full bg-invert px-4 font-semibold text-on-invert">
-              {t.retry}
-            </button>
+            {failure.reason === "server_error" ? (
+              <button type="button" onClick={onRetry} className="min-h-11 rounded-full bg-invert px-4 font-semibold text-on-invert">
+                {t.retry}
+              </button>
+            ) : null}
             <a href={site.contact.phoneHref} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 font-medium">
               {copy.store.callToOrder}
             </a>

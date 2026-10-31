@@ -747,8 +747,8 @@ type PlaceOrderResult =
 
 | Tên | Loại | Input | Output | Bảo vệ |
 |---|---|---|---|---|
-| `lookupCustomer` | Action | `{ phone }` | `{status:"new"} \| {status:"known"; greetingName; zoneId; zoneName; savedAddressToken; requiresPrepay} \| {status:"self"; name; zoneId; addressText; lat?; lng?}` | rate-limit §7.7 |
-| `cancelOrderByToken` | Action | `{ token, reason? }` | `{ok} \| {ok:false; reason:"too_late"\|"not_found"}` | token + `now < cutoff_at` |
+| `lookupCustomer` | Action | `{ phone }` | `{status:"new"} \| {status:"known"; greetingName; zoneId; zoneName; savedAddressToken; requiresPrepay} \| {status:"self"; name; zoneId; addressText; lat; lng; requiresPrepay}` | rate-limit §7.7 |
+| `cancelOrderByToken` | Action | `{ token, reason? }` | `{ok} \| {ok:false; reason:"too_late"\|"not_found"\|"rate_limited"}` | token + `now < cutoff_at`; rate-limit 10/10 phút/IP |
 | `GET /api/oven` | Route | — | `OvenSnapshot = { serverNow, status: OvenStatus, days: DaySlots[], rules: { maxQtyPerLine, freeShipFrom, deliveryWindowMin } }` — `days` = mọi ngày còn mẻ nhận (hôm nay … +daysAhead) kèm chip giờ, để tab ngày & chọn mẻ không cần gọi thêm | public, cache 10 s |
 | `login` / `logout` | Action | `{ staffId, pin }` | redirect | rate-limit 5/15 phút/IP |
 | `advanceOrders` | Action (admin) | `{ orderIds[], to }` | `{ updated }` | `requireStaff()` + `canTransition` |
@@ -1231,9 +1231,10 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** đạt ngân sách §13.1 ở bản build; luồng UI đầy đủ trên iPhone 13/Pixel 7 trong Playwright; Back đóng sheet; reduced-motion hoạt động.
 - Ghi chú triển khai: `GET /api/oven` làm luôn ở M3 (cần cho poll). `placeOrder` giả kiểm tra thật (zod, catalog, giá, suất đang còn) nhưng **không ghi DB/không giữ suất**; production trả `server_error` (khách thấy "Gọi quán/Nhắn Zalo") trừ khi `E2E=1` → **không ra mắt trước M4**. Client không tải zod (kiểm tra nhẹ trong `lib/order-contract.ts`, cùng mã lỗi). Add-on chọn trong Item Sheet = 1 phần cho cả dòng (không nhân theo số bánh). Đo bản build: JS trang `/` ≈ 170 KB gzip (framework ≈ 139 + app ≈ 31), CLS 0,005 kể cả khi thu gọn Oven Bar. Chưa làm: `?ngay=` (tab ngày giữ trong giỏ), sheet "Vì sao đặt trước?" không gắn URL, link `/chinh-sach` (M6), tra khách cũ (M4).
 
-### M4 — Đặt đơn thật (≈ 2 ngày)
+### M4 — Đặt đơn thật (≈ 2 ngày) ✅
 - `placeOrder`, `lookupCustomer` (+ cookie ghi nhớ), rate-limit, Telegram, `/o/[token]`, `cancelOrderByToken`, `/api/oven`.
 - **Chấp nhận:** test đua tranh pass; đơn xuất hiện trong DB + Telegram trong ≤ 3 s; tra SĐT từ thiết bị lạ **không** lộ mô tả nhà.
+- Ghi chú triển khai: nghiệp vụ nằm trong `lib/server/dal/orders.ts` (`placeOrderCore`, `cancelOrderByTokenCore`, `getOrderView`) để integration test gọi thẳng; Server Action chỉ parse/rate-limit/cookie/`after()`. Giữ suất dùng `now` của `serverNow()` (không dùng `now()` SQL) để e2e với `TEST_NOW` đúng; điều kiện thêm: ngày phục vụ `open` (ngày `paused` → `paused`). `savedAddressToken` trỏ tới **đơn giao gần nhất** của khách (không phụ thuộc "Ghi nhớ"); bảng `addresses` chỉ ghi khi khách bật "Ghi nhớ" và là nguồn tự điền khi có cookie `th_c`. Token & cookie ký HMAC-SHA256 (`node:crypto`, không cần `jose`). Trả trước: `requiresPrepay` trong `lib/domain/pricing.ts` — `risk_based` = từng bom hàng **hoặc** tổng ≥ `prepayOverTotal`; COD bị từ chối bằng `prepay_required` (VietQR ảnh để M6, hiện chỉ có nội dung CK). Telegram: "sắp kín lò" gửi khi đơn làm mẻ còn đúng 1 khay (tự nhiên một lần/mẻ); thiếu biến môi trường → bỏ qua. Huỷ hai lần = `ok` (không trả suất lần hai). `lookupCustomer` vượt rate-limit/lỗi → `{status:"new"}`; `self` cũng kèm `requiresPrepay`. E2E ghi DB thật → `workers: 1`, mỗi test dọn đơn/khách/rate-limit (`e2e/db.ts`). Sheet primitive đóng `<dialog>` khi trang bị ẩn trong `<Activity>` (chuyển route), nếu không nó chặn trang mới.
 
 ### M5 — Kitchen Dashboard (≈ 3 ngày)
 - Auth (login, `proxy.ts`, `requireStaff`), 5 tab §10, Thêm đơn nhanh, bản in, wake lock, cron `daily` (tạo mẻ + gửi bảng tổng hợp).

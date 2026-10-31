@@ -30,6 +30,9 @@ export const site = {
     email: "TODO: email liên hệ",
   },
 
+  // Link "Đánh giá trên Google" ở trang theo dõi đơn — null thì ẩn nút. ⏳ Chờ chủ quán gửi.
+  reviewUrl: null as string | null,
+
   social: {
     facebook: "https://www.facebook.com/theheat.thangbinh",
     instagram: "https://www.instagram.com/theheat.thangbinh",

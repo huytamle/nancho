@@ -1,23 +1,27 @@
 "use server";
 
+import { cookies } from "next/headers";
+import { after } from "next/server";
 import * as z from "zod";
 import type { CheckoutErrorKey } from "@/data/copy";
-import { site } from "@/data/site";
-import { fits, requirementOf } from "@/lib/domain/capacity";
-import { orderCode, transferMemo } from "@/lib/domain/order-code";
 import { normalizePhone } from "@/lib/domain/phone";
-import { priceOrder, type CartLine } from "@/lib/domain/pricing";
-import { vnTimeLabel } from "@/lib/domain/time";
-import { LIMITS, type FieldErrors, type FieldKey, type PlaceOrderInput, type PlaceOrderResult } from "@/lib/order-contract";
+import {
+  LIMITS,
+  type CancelResult,
+  type FieldErrors,
+  type FieldKey,
+  type PlaceOrderInput,
+  type PlaceOrderResult,
+} from "@/lib/order-contract";
 import { serverNow } from "@/lib/server/clock";
+import { CUSTOMER_COOKIE, rememberCookieOptions, signRemember } from "@/lib/server/customer-cookie";
 import { getCatalog } from "@/lib/server/dal/catalog";
-import { getOvenSnapshot } from "@/lib/server/dal/schedule";
+import { cancelOrderByTokenCore, placeOrderCore } from "@/lib/server/dal/orders";
+import { sendTelegram } from "@/lib/server/notify/telegram";
+import { clientIp, MIN, rateLimit } from "@/lib/server/rate-limit";
 
-// M3: ĐẶT ĐƠN GIẢ — kiểm tra thật (zod, catalog, giá, suất đang còn) nhưng KHÔNG ghi DB, KHÔNG giữ suất.
-// Bản production trả `server_error` (khách thấy "Gọi quán / Nhắn Zalo") trừ khi chạy e2e (E2E=1).
-// TODO(M4): rate-limit, transaction giữ suất, idempotency, lưu khách, Telegram, cookie th_c (§8.1).
-
-const stubEnabled = process.env.NODE_ENV !== "production" || process.env.E2E === "1";
+// Đặt đơn thật (§8.1): parse → honeypot/thời gian điền → rate-limit → nghiệp vụ trong DAL (giữ suất,
+// idempotency, lưu khách) → cookie "ghi nhớ" → Telegram trong after() → DTO tối giản.
 
 const msg = (key: CheckoutErrorKey) => key;
 const qty = z.number().int().min(1).max(10);
@@ -89,67 +93,55 @@ export async function placeOrder(raw: PlaceOrderInput): Promise<PlaceOrderResult
   if (f.type === "delivery" && !f.addressText && !f.savedAddressToken) {
     return { ok: false, reason: "invalid", fieldErrors: { address: "addressShort" } };
   }
-  if (!stubEnabled) return { ok: false, reason: "server_error" };
 
   const now = serverNow();
-  const [catalog, oven] = await Promise.all([getCatalog(), getOvenSnapshot(now)]);
-  if (oven.status.kind === "paused") return { ok: false, reason: "paused" };
+  try {
+    const ip = await clientIp();
+    const allowed = await rateLimit(
+      [
+        { key: `order:ip:${ip}`, limit: 5, windowSec: 10 * MIN },
+        { key: `order:phone:${phone}`, limit: 3, windowSec: 10 * MIN },
+      ],
+      now,
+    );
+    if (!allowed) return { ok: false, reason: "rate_limited" };
 
-  const byId = new Map(catalog.products.map((p) => [p.id, p]));
-  const unknown = input.lines.flatMap((l) => [l.productId, ...(l.addons ?? []).map((a) => a.productId)]).filter((id) => !byId.has(id));
-  if (unknown.length > 0) return { ok: false, reason: "unavailable", productIds: unknown };
+    const { result, created } = await placeOrderCore(input, phone, { now, catalog: await getCatalog() });
+    if (!created || !result.ok) return result;
 
-  const lines: CartLine[] = input.lines.map((l) => ({
-    product: byId.get(l.productId)!,
-    qty: l.qty,
-    comboChoices: l.comboChoices,
-    addons: l.addons?.map((a) => ({ product: byId.get(a.productId)!, qty: a.qty })),
-  }));
+    const jar = await cookies();
+    if (input.customer.remember) jar.set(CUSTOMER_COOKIE, signRemember(created.customerId, now), rememberCookieOptions);
+    else jar.delete(CUSTOMER_COOKIE);
 
-  const zone = f.type === "delivery" ? catalog.zones.find((z) => z.id === f.zoneId) : undefined;
-  const point = f.type === "pickup" ? catalog.pickupPoints.find((p) => p.id === f.pickupPointId) : undefined;
-  if (f.type === "delivery" && !zone) return { ok: false, reason: "invalid", fieldErrors: { zone: "zoneRequired" } };
-  if (f.type === "pickup" && !point) return { ok: false, reason: "invalid", fieldErrors: {} };
-
-  const priced = priceOrder({
-    lines,
-    fulfillment: zone
-      ? { type: "delivery", zone }
-      : { type: "pickup", point: point!, giftProduct: point!.giftProductId ? byId.get(point!.giftProductId) : undefined },
-    shipping: { freeShipFrom: oven.rules.freeShipFrom },
-  });
-  if (!priced.ok) {
-    return priced.error.reason === "unavailable"
-      ? { ok: false, reason: "unavailable", productIds: priced.error.productIds }
-      : { ok: false, reason: "invalid", fieldErrors: {} };
+    console.info(JSON.stringify({ evt: "order_placed", code: result.code, phone: maskPhone(phone), total: result.total, status: result.status }));
+    after(async () => {
+      for (const text of created.telegram) await sendTelegram(text);
+    });
+    return result;
+  } catch (err) {
+    console.error(JSON.stringify({ evt: "order_failed", phone: maskPhone(phone), error: String(err) }));
+    return { ok: false, reason: "server_error" };
   }
+}
 
-  const req = requirementOf(lines.map((l) => ({ product: l.product, qty: l.qty })));
-  const all = oven.days.flatMap((d) => d.slots);
-  const slot = all.find((s) => s.batchId === input.batchId);
-  const alternatives = all.filter((s) => s.batchId !== input.batchId && s.level !== "closed" && fits(req, s));
-  if (!slot || slot.level === "closed") return { ok: false, reason: "cutoff_passed", alternatives };
-  if (!fits(req, slot)) return { ok: false, reason: "slot_full", alternatives };
+/** Log không chứa SĐT đầy đủ (§13.4): "0912345678" → "091****678". */
+const maskPhone = (p: string) => `${p.slice(0, 3)}****${p.slice(7)}`;
 
-  const day = oven.days.find((d) => d.date === slot.date)!;
-  const seq = 1 + Math.floor(Math.random() * 30); // đơn giả — M4 lấy từ service_days.order_seq
-  const readyAt = new Date(slot.readyAt);
-  const etaEnd = vnTimeLabel(new Date(readyAt.getTime() + oven.rules.deliveryWindowMin * 60_000));
+const CancelInput = z.object({ token: z.string().regex(/^[\w-]{22}$/), reason: z.string().trim().max(200).optional() });
 
-  return {
-    ok: true,
-    code: orderCode(slot.date, seq),
-    seq,
-    trackingPath: "/",
-    readyLabel: slot.readyLabel,
-    dayLabel: day.label,
-    etaLabel: zone ? `khoảng ${slot.readyLabel}–${etaEnd}` : `${slot.readyLabel} tại ${point?.name ?? site.kitchen.name}`,
-    cutoffLabel: vnTimeLabel(new Date(slot.cutoffAt)),
-    total: priced.total,
-    status: "placed",
-    payment:
-      input.paymentMethod === "cod"
-        ? { method: "cod" }
-        : { method: "transfer", qrUrl: "", memo: transferMemo(slot.date, seq), amount: priced.total },
-  };
+export async function cancelOrderByToken(raw: { token: string; reason?: string }): Promise<CancelResult> {
+  const parsed = CancelInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, reason: "not_found" };
+  const now = serverNow();
+  try {
+    const allowed = await rateLimit([{ key: `cancel:ip:${await clientIp()}`, limit: 10, windowSec: 10 * MIN }], now);
+    if (!allowed) return { ok: false, reason: "rate_limited" };
+    const res = await cancelOrderByTokenCore(parsed.data.token, { now, reason: parsed.data.reason });
+    if (!res.ok) return res;
+    if (res.telegram) after(() => sendTelegram(res.telegram!).then(() => undefined));
+    return { ok: true };
+  } catch (err) {
+    console.error(JSON.stringify({ evt: "cancel_failed", error: String(err) }));
+    return { ok: false, reason: "not_found" };
+  }
 }

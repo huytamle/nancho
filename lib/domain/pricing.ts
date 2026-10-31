@@ -1,6 +1,6 @@
 // Tính tiền đơn hàng phía server (BLUEPRINT §7.4). Client chỉ gửi ý định; giá luôn tính lại ở đây.
 
-import type { PickupPoint, Product, ShippingSettings, Zone } from "@/lib/domain/types";
+import type { PaymentSettings, PickupPoint, Product, ShippingSettings, Zone } from "@/lib/domain/types";
 
 export type CartLine = {
   product: Product;
@@ -120,4 +120,18 @@ export function priceOrder(input: {
 
   const discount = 0;
   return { ok: true, items, subtotal, shipFee, discount, total: Math.max(0, subtotal + shipFee - discount) };
+}
+
+/**
+ * Trả trước theo rủi ro (§16-7): `risk_based` → khách từng bom hàng hoặc đơn ≥ `prepayOverTotal`.
+ * Khách mới/khách quen đặt COD bình thường.
+ */
+export function requiresPrepay(
+  policy: Pick<PaymentSettings, "prepayPolicy" | "prepayOverTotal">,
+  customer: { noShowCount: number } | null,
+  total: number,
+): boolean {
+  if (policy.prepayPolicy === "never") return false;
+  if (policy.prepayPolicy === "always") return true;
+  return (customer?.noShowCount ?? 0) > 0 || total >= policy.prepayOverTotal;
 }

@@ -22,7 +22,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
 | **M2 — DB & DAL** | ✅ | `bf92fda` |
 | **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
-| M4 — Đặt đơn thật | ⏭ **làm tiếp** | — |
+| **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
+| M5 — Kitchen Dashboard | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -95,11 +96,29 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - e2e "mẻ kín → chuyển mẻ gợi ý" cần ghi DB → làm ở M4 (UI banner `slot_full` + chip thay thế đã có).
 - Footer chưa link `/chinh-sach` (M6).
 
+## M4 — đã làm
+
+- **Lõi** `lib/server/dal/orders.ts`: `placeOrderCore` (replay idempotency → catalog/giá → chặn/trả trước → địa chỉ (gõ mới hoặc `savedAddressToken`) → transaction {UPDATE giữ suất có điều kiện, `order_seq`, upsert khách, `addresses` nếu ghi nhớ, order + items (add-on có `parent_item_id`) + events, tự xác nhận khách quen} → tin Telegram), `cancelOrderByTokenCore` (FOR UPDATE, `canTransition`, trả suất một lần), `getOrderView` (DTO biên nhận + `reorder`). Lỗi unique `idempotency_key` khi gửi trùng song song → trả đơn của lần thắng.
+- **Action** `app/actions/order.ts` (`placeOrder`, `cancelOrderByToken`) & `app/actions/customer.ts` (`lookupCustomer`): zod → rate-limit (`order:ip` 5/10′, `order:phone` 3/10′, `lookup` 5/10′ + 30/ngày, `cancel` 10/10′) → DAL → cookie `th_c` (đặt khi bật Ghi nhớ, xoá khi tắt) → `after()` gửi Telegram. Log JSON che SĐT (`091****678`).
+- **Hạ tầng:** `lib/server/rate-limit.ts` (UPSERT cửa sổ cố định, `clientIp()` từ `x-forwarded-for`), `customer-cookie.ts` (HMAC, `purpose` trong chữ ký; dev có secret mặc định, production bắt buộc `CUSTOMER_COOKIE_SECRET` ≥ 32), `notify/messages.ts` (thuần, có test) + `notify/telegram.ts`. Domain thêm `requiresPrepay`.
+- **UI:** checkout tra SĐT (debounce 300 ms, cả khi mở sheet với SĐT trong nháp), chào khách cũ + [Dùng địa chỉ này]/[Nhập địa chỉ khác], tự điền khi có cookie, khoá COD khi phải trả trước, banner `prepay_required`/`rate_limited`/`contact_us`. `/o/[token]` (PPR: header tĩnh, đơn stream): tiến độ, chi tiết, CK chờ trả, gọi/Zalo, huỷ có xác nhận, poll 30 s, "Đặt lại đơn này", nút Google review khi có `site.reviewUrl`. "Theo dõi đơn" thay URL về `/` trước để Back không mở sheet trống.
+- **Sửa primitive Sheet:** đóng `<dialog>` trong cleanup — Next giữ trang cũ trong `<Activity>`, dialog modal còn trên top layer sẽ chặn trang mới.
+- **Test:** unit 91 · int 28 (`orders.int.test.ts`: đua tranh 10→3, idempotency kể cả song song, huỷ song song trả suất 1 lần, cutoff/paused, khách quen/bom/chặn, token địa chỉ: khách khác/hết hạn/giả mạo bị từ chối, máy lạ không lộ mô tả nhà) · e2e 42/42 (thêm: mẻ kín → chạm mẻ gợi ý, theo dõi + huỷ, khách cũ cookie/máy lạ). JS `/` ≈ 167 KB gzip.
+
+## M5 — lưu ý từ M4
+
+- Telegram link đơn: `/admin/kitchen?ngay=<date>&tab=don` — dashboard nên nhận đúng query này.
+- Action admin đổi trạng thái nhớ cập nhật `customers.completed_count`/`no_show_count` (tự xác nhận & trả trước dựa vào đó).
+- Cron daily: dọn `rate_limits` cũ (chưa làm).
+- VietQR (`qrUrl` đang rỗng) ở M6. Chưa có Telegram thật để đo "≤ 3 s" — cần chủ quán tạo bot + nhóm, điền `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`.
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
 
-- `pkill -f "next start"` giết luôn shell của chính lệnh → exit 144. Chạy server bằng `npx next start -p 3100 &` rồi `kill $!`.
+- `pkill -f "next start"` giết luôn shell của chính lệnh → exit 144. Chạy server bằng `npx next start -p 3100 &`; `kill $!` chỉ giết `npx`, **tiến trình `next-server` vẫn giữ cổng** → tìm trong `/proc/*/cmdline` dòng bắt đầu `next-server` rồi kill.
+- E2E giờ cần `DATABASE_URL` trong tiến trình Playwright (dọn DB mỗi test). Đồng hồ `TEST_NOW` chạy tiếp theo thời gian thật → đừng khẳng định số phút đếm ngược cứng.
+- Ở trang `/o/...` sau khi bấm Link, phần tử của trang `/` vẫn nằm ẩn trong DOM (Activity) → locator `getByText` có thể trùng; giới hạn trong `getByRole("article")`.
 - Chụp màn hình khi server cũ còn chạy sau khi build lại → CSS lệch, ảnh sai. Luôn dừng server trước khi build.
 - Đo JS: đọc `<script src>` trong `.next/server/app/index.html`, bỏ file `noModule` (polyfill).
 - `next dev` tự ghi lại khối đầu `AGENTS.md` — commit nguyên như vậy.

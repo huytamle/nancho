@@ -364,3 +364,6 @@ export const rateLimits = pgTable(
   },
   (t) => [primaryKey({ columns: [t.key, t.windowStart] })],
 ).enableRLS();
+
+export type Order = typeof orders.$inferSelect;
+export type BatchRow = typeof batches.$inferSelect;

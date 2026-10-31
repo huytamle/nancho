@@ -57,6 +57,8 @@ export function checkFields(f: {
   zoneId: number | null;
   addressText: string;
   note: string;
+  /** Khách chọn "Dùng địa chỉ này" (savedAddressToken) → không cần gõ mô tả nhà. */
+  savedAddress?: boolean;
 }): FieldErrors {
   const e: FieldErrors = {};
   const name = f.name.trim();
@@ -66,9 +68,34 @@ export function checkFields(f: {
   if (f.fulfillment === "delivery") {
     const addr = f.addressText.trim();
     if (f.zoneId === null) e.zone = "zoneRequired";
-    if (addr.length < LIMITS.addressMin) e.address = "addressShort";
-    else if (addr.length > LIMITS.addressMax) e.address = "addressLong";
+    if (!f.savedAddress) {
+      if (addr.length < LIMITS.addressMin) e.address = "addressShort";
+      else if (addr.length > LIMITS.addressMax) e.address = "addressLong";
+    }
   }
   if (f.note.trim().length > LIMITS.noteMax) e.note = "noteLong";
   return e;
 }
+
+/** Kết quả `lookupCustomer` (§7.7). Thiết bị lạ chỉ thấy tên gọi + tên khu vực — không bao giờ thấy mô tả nhà. */
+export type LookupResult =
+  | { status: "new" }
+  | {
+      status: "known";
+      greetingName: string;
+      zoneId: number | null;
+      zoneName: string | null;
+      savedAddressToken: string | null;
+      requiresPrepay: boolean;
+    }
+  | {
+      status: "self";
+      name: string;
+      zoneId: number | null;
+      addressText: string | null;
+      lat: number | null;
+      lng: number | null;
+      requiresPrepay: boolean;
+    };
+
+export type CancelResult = { ok: true } | { ok: false; reason: "too_late" | "not_found" | "rate_limited" };

@@ -56,7 +56,12 @@ export function OrderSuccess({ result, onDone }: { result: Extract<PlaceOrderRes
 
       <div className="mt-6 flex w-full flex-col gap-2">
         {result.trackingPath !== "/" ? (
-          <Link href={result.trackingPath} className="inline-flex h-12 items-center justify-center rounded-full bg-invert font-semibold text-on-invert">
+          <Link
+            href={result.trackingPath}
+            // Bỏ `?buoc=chot-don` khỏi lịch sử: Back từ trang theo dõi về thẳng "/" thay vì sheet trống.
+            onClick={() => window.history.replaceState(null, "", "/")}
+            className="inline-flex h-12 items-center justify-center rounded-full bg-invert font-semibold text-on-invert"
+          >
             {t.track}
           </Link>
         ) : null}

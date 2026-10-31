@@ -52,6 +52,13 @@ export function Sheet({
     return () => clearTimeout(t);
   }, [open]);
 
+  // Chuyển trang (Next giữ trang cũ trong <Activity> ẩn) → effect bị dọn: rút dialog khỏi top layer,
+  // không thì nó vẫn modal và chặn trang mới. Quay lại trang → effect trên chạy lại và mở lại nếu còn `open`.
+  useEffect(() => {
+    const d = ref.current;
+    return () => d?.close();
+  }, []);
+
   useEffect(() => {
     const vv = window.visualViewport;
     const d = ref.current;
