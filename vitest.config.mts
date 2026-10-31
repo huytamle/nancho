@@ -11,6 +11,7 @@ export default defineConfig({
     coverage: {
       include: ["lib/domain/**/*.ts"],
       exclude: ["lib/domain/__tests__/**"],
+      thresholds: { lines: 95, branches: 95, functions: 95, statements: 95 },
     },
   },
 });

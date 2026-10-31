@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.2 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Phiên bản:** 1.3 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.3 (M1):** `priceOrder` trả kết quả có kiểu (§7.4) · làm rõ quyền bếp/shipper (§7.5) · Prep trả `split`/`byProduct` có cấu trúc thay cho chuỗi `breakdown`, điểm giao trong tuyến xếp theo khu vực rồi số thứ tự (§7.6, Phụ lục B) · regex mã chuyển khoản chặn số dính liền (§7.8) · seed Phụ lục A ở `data/seed.ts`.
 > **Thay đổi 1.2:** ✅ Giữ **Café, KOLD Gelato và Đặt bàn** của quán THE HEAT thành mục riêng `/tai-quan` (§5.4) — không thuộc luồng đặt món · Thêm token `--on-accent` (chữ đen trên nền cam, §9.1) · M0 hoàn tất.
 > **Thay đổi 1.1:** ✅ Rêu vừa là **bếp** vừa là **điểm nhận** · ✅ Thực đơn & giá theo Phụ lục A là chính thức · Database mặc định đổi từ Neon sang **Supabase (Postgres, Singapore)**.
 > **Ngôn ngữ:** Văn bản tiếng Việt, tên code/biến/bảng bằng tiếng Anh.
@@ -309,6 +310,7 @@ components/
 data/
   copy.ts                       # toàn bộ chuỗi UI tiếng Việt (typed object)
   dine-in.ts                    # thực đơn Café & KOLD Gelato cho /tai-quan
+  seed.ts                       # Phụ lục A (dùng chung: fixture test M1 + db:seed M2)
   site.ts                       # thông tin thương hiệu, hotline, Zalo, pháp lý
 lib/
   domain/                       # THUẦN — không import DB/Next/React
@@ -596,6 +598,8 @@ export function priceOrder(input: {
 };
 ```
 
+Kết quả: `{ ok: true, … } | { ok: false; error: { reason: "invalid_qty" | "invalid_combo" | "invalid_addon"; productId } | { reason: "unavailable"; productIds } }` — không ném lỗi; mỗi `PricedItem` có `parentIndex` (add-on gắn món nào). Quà hết hàng → bỏ qua, không chặn đơn.
+
 Quy tắc: phí ship = `zone.shipFee` (0 nếu `subtotal ≥ freeShipFrom`); nhận tại điểm → phí 0 + thêm **1** dòng quà `giftProduct` mỗi đơn; tổng là số nguyên; không cho tổng âm. Lựa chọn combo phải thuộc `combo_config.options`; add-on phải thuộc `upsell_ids` của món cha hoặc là món `addon` mua riêng.
 
 ### 7.5 `lib/domain/order-status.ts` — vòng đời đơn
@@ -614,7 +618,11 @@ placed ──▶ confirmed ──▶ baking ──▶ ready ──┬──▶ d
 - `completed` → `customers.completed_count += 1`.
 - Trạng thái hiển thị cho khách: *Đã nhận đơn* (placed/confirmed) → *Đang nướng* → *Ra lò* → *Đang giao* / *Chờ bạn ở Rêu* → *Hoàn tất*.
 
-Export `canTransition(from, to, ctx)` và dùng nó ở mọi action đổi trạng thái.
+Export `canTransition(from, to, ctx)` và dùng nó ở mọi action đổi trạng thái. `ctx = { actor, fulfillment, now, cutoffAt, reason? }`; lỗi trả `invalid_transition · forbidden · too_late · reason_required`.
+
+- Đơn giao: `ready → delivering` bắt buộc; đơn nhận tại điểm: `ready → completed | no_show` (không qua `delivering`).
+- **Quyền (chốt ở M1):** `system` chỉ `placed → confirmed`. `kitchen` tới `ready` **và** bàn giao đơn nhận tại quầy (`ready → completed | no_show`) vì bếp đặt tại Rêu. `shipper`: đơn giao `ready → delivering → completed | no_show`, không được huỷ.
+- Kèm `shouldAutoConfirm`, `releasesCapacity`, `customerStage` (khoá giai đoạn; nhãn chữ nằm ở `data/copy.ts`).
 
 ### 7.6 `lib/domain/prep.ts` — Bảng Tổng Hợp Chuẩn Bị
 
@@ -627,8 +635,11 @@ type PrepReport = {
   totals: {
     mains: { pizza: number; bbq: number };
     byProduct: { productId: string; name: string; qty: number; kind: Kind }[];   // combo đã nổ
-    ingredients: { ingredientId: string; label: string; qty: number; unit: string;
-                   approxKg?: number; breakdown?: string; storage: string }[];
+    ingredients: { ingredientId: string; label: string; qty: number; unit: string; storage: string;
+                   approxKg?: number;
+                   split?: { sold: number; gift: number };                        // có hàng tặng → "4 bán · 3 tặng"
+                   byProduct?: { productId: string; name: string; qty: number }[] // ≥ 2 món cùng loại → "5 Pepperoni · 4 Bơ tỏi"
+                 }[];
     supplier: { supplier: "reu"; productId: string; qty: number }[];             // đối soát
   };
   batches: {
@@ -652,7 +663,7 @@ Thuật toán:
 1. Lọc đơn của ngày, bỏ `cancelled`.
 2. Với mỗi dòng: combo → thay bằng các món thành phần theo `combo_choices` (mỗi thành phần qty = qty combo). Dòng quà vẫn tính vào nguyên liệu, **ghi rõ** "(x bán · y tặng)".
 3. Cộng dồn theo sản phẩm → nhân BOM → cộng dồn theo nguyên liệu. `approxKg = qty × unit_weight_g / 1000`.
-4. Chia theo mẻ; trong mẻ, đơn giao nhóm theo tuyến (thứ tự `routes.sort` rồi `zones.sort`), đơn nhận tại chỗ nhóm theo điểm nhận.
+4. Chia theo mẻ (mẻ trống vẫn liệt kê); trong mẻ, đơn giao nhóm theo tuyến (`routes.sort`), trong tuyến xếp theo `zones.sort` rồi `seq`; khu vực không tìm thấy → nhóm "Chưa rõ tuyến" cuối danh sách. Đơn nhận tại chỗ nhóm theo điểm nhận.
 5. `collect` = `total` nếu `payment_status = unpaid`, ngược lại 0.
 6. Cảnh báo: chuyển khoản chưa nhận tiền; ghi chú chứa từ khoá (`dị ứng`, `không`, `ít`, `chay`) → `allergy_note`; đơn còn `placed`.
 7. **Bất biến:** `totals.mains` = Σ các mẻ; test bắt buộc với bộ dữ liệu ở Phụ lục B.
@@ -679,7 +690,7 @@ Bảo vệ: rate-limit `lookup` 5 lần/10 phút/IP và 30 lần/ngày/IP; debou
 
 ### 7.8 `lib/domain/order-code.ts`
 
-`code = "TH-" + DD + MM + "-" + seq(2+ chữ số)` → `TH-0611-12`. Nội dung chuyển khoản (ASCII, không dấu cách): `TH061112`. Webhook khớp bằng regex `/TH(\d{4})(\d{2,3})/` + `service_date` trong ±7 ngày. `seq` lấy bằng `UPDATE service_days SET order_seq = order_seq + 1 … RETURNING order_seq` trong cùng transaction.
+`code = "TH-" + DD + MM + "-" + seq(2+ chữ số)` → `TH-0611-12`. Nội dung chuyển khoản (ASCII, không dấu cách): `TH061112`. Webhook khớp bằng regex `/TH(\d{2})(\d{2})(\d{2,3})(?!\d)/i` (không ăn nhầm số tham chiếu dính liền) + `service_date` = ngày cùng DD/MM gần nhất trong ±7 ngày (`matchTransferMemo`). `seq` lấy bằng `UPDATE service_days SET order_seq = order_seq + 1 … RETURNING order_seq` trong cùng transaction.
 
 ---
 
@@ -1201,7 +1212,7 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - Ghi chú triển khai: `@playwright/test` ghim `1.63.0` (+ `overrides.playwright-core`) để khớp trình duyệt; e2e chạy cả 3 thiết bị trên Chromium. `@types/node` ^22 (Vitest 5 yêu cầu). `postgres` dùng nhánh 3.x (4.0 vừa ra, chờ ổn định).
 - **Chấp nhận:** trang `/` hiển thị placeholder tối; lint/typecheck/CI xanh.
 
-### M1 — Domain lõi thuần + test (≈ 1–2 ngày)
+### M1 — Domain lõi thuần + test (≈ 1–2 ngày) ✅
 - `lib/domain/*` theo §7 + test; Phụ lục B làm fixture.
 - **Chấp nhận:** coverage `lib/domain` ≥ 95%; test Prep khớp từng con số của §10.2.
 
@@ -1336,7 +1347,7 @@ Ngày phục vụ **Thứ Sáu 06/11/2026**, 12 đơn, không đơn nào bị hu
 | Hộp pizza / Khay BBQ | 9 / 6 |
 | Cold brew Rêu | 4 chai (báo cáo đối soát `reu`: 4) |
 | Mẻ 17:00 (lò 16:40) | 3 Pizza + 2 BBQ · Tuyến KP2: Tuấn, Lan, Huy |
-| Mẻ 18:00 (lò 17:40) | 4 Pizza + 3 BBQ · Tuyến QL-TT: Minh, Hoa, Phúc, Vy, Ngọc · Rêu: Khánh |
+| Mẻ 18:00 (lò 17:40) | 4 Pizza + 3 BBQ · Tuyến QL-TT: Hoa, Vy, Ngọc (Thị trấn) → Minh, Phúc (Quốc lộ) · Rêu: Khánh |
 | Mẻ 19:00 (lò 18:40) | 2 Pizza + 1 BBQ · Tuyến KP2: Trang · Rêu: Dũng, Bảo |
 | Cảnh báo | `unpaid_transfer` #5, #9 · `allergy_note` #7 |
 | Bất biến | 3+4+2 = 9 pizza · 2+3+1 = 6 BBQ |

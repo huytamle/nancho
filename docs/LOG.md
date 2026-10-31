@@ -1,6 +1,6 @@
 # Nhật ký triển khai — đọc trước khi bắt đầu phiên mới
 
-> Mục đích: phiên sau nắm đủ bối cảnh **mà không cần đọc lại toàn bộ code**. Nguồn sự thật vẫn là `docs/BLUEPRINT.md` (v1.2); file này chỉ ghi *đã làm gì, vì sao, còn treo gì*.
+> Mục đích: phiên sau nắm đủ bối cảnh **mà không cần đọc lại toàn bộ code**. Nguồn sự thật vẫn là `docs/BLUEPRINT.md` (v1.3); file này chỉ ghi *đã làm gì, vì sao, còn treo gì*.
 > Cập nhật file này ở cuối mỗi milestone.
 
 ## Vai trò khi làm việc
@@ -19,9 +19,10 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 |---|---|---|
 | Tài liệu (Blueprint 1.1, Marketing) | ✅ trên `main` | `f185f2a`, `8014fff` |
 | **M0 — Dọn nền** | ✅ trên `main` | `1341efc` |
-| M1 — Domain lõi thuần + test | ⏭ **làm tiếp** | — |
+| **M1 — Domain lõi thuần + test** | ✅ (xem commit M1) | — |
+| M2 — DB & DAL | ⏭ **làm tiếp** | — |
 
-CI GitHub Actions (`.github/workflows/ci.yml`) **chưa được xác nhận chạy xanh trên GitHub** (mới chỉ chạy local) → xem tab Actions khi bắt đầu M1.
+CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
 ## M0 — đã làm
 
@@ -34,12 +35,23 @@ CI GitHub Actions (`.github/workflows/ci.yml`) **chưa được xác nhận ch�
 - **Config:** `cacheComponents`, `reactCompiler`, AVIF/WebP, security headers + CSP không nonce (`img.vietqr.io` đã cho phép). Layout: `metadataBase` theheatpizza.vn, `viewportFit: "cover"`, skip link.
 - **Tooling:** zod, drizzle-orm, postgres, jose, @node-rs/argon2, server-only; dev: drizzle-kit, babel-plugin-react-compiler, vitest, @playwright/test, @axe-core/playwright. `vitest.config.mts`, `playwright.config.ts` (iPhone 13/Pixel 7/Desktop, đều Chromium), `e2e/smoke.spec.ts` (axe serious/critical = 0, không cuộn ngang, header bảo mật), `drizzle.config.ts` (schema ở M2), `.env.example`.
 
+## M1 — đã làm
+
+- `lib/domain/`: `types.ts` (+ `DEFAULT_SETTINGS`), `oven-status.ts` (`computeOvenStatus`, `slotsForDay`), `capacity.ts`, `pricing.ts`, `order-status.ts` (`canTransition`, `shouldAutoConfirm`, `releasesCapacity`, `customerStage`), `prep.ts` (`buildPrepReport`), `order-code.ts` (`orderCode`, `transferMemo`, `matchTransferMemo`).
+- **`data/seed.ts` = Phụ lục A** (products, ingredients, recipes, routes, zones, pickup points, slot template) → M2 seed **import lại file này**, không chép.
+- Test: 76 test, coverage `lib/domain` ≈ 99,6% dòng / 97,8% nhánh; **ngưỡng 95% bắt buộc** (`vitest.config.mts`), CI chạy `npm run test:coverage`. Fixture Phụ lục B (`lib/domain/__tests__/fixtures.ts`) dựng đơn **bằng chính `priceOrder`** → khớp từng con số bảng kết quả.
+- Blueprint 1.3 ghi lại các quyết định dưới đây.
+
 ## Quyết định & lý do (đừng đảo lại nếu không có lý do mới)
 
 1. **Chữ đen trên nút cam** (`text-on-accent`): trắng/#ff3d00 = 3,54:1 trượt WCAG AA; đen ≈ 5,9:1. Áp dụng cả CTA "Đặt lò" ở M3.
 2. `postgres` **3.x** (4.0 mới ra 29/10/2026). `@types/node` **^22** (Vitest 5 yêu cầu).
 3. `@playwright/test` **ghim 1.63.0** + `overrides.playwright-core: 1.63.0` — khớp Chromium cài sẵn trong container và tránh 2 bản `Page` type lệch nhau.
 4. Footer không in năm (`new Date()` khi prerender bị cấm với `cacheComponents`).
+5. (M1) `priceOrder` **trả Result, không ném lỗi**; quà hết hàng → bỏ qua, không chặn đơn.
+6. (M1) Prep trả `split`/`byProduct` **có cấu trúc** — UI tự trình bày (tên ngắn, định dạng). Điểm giao trong tuyến: theo khu vực rồi số thứ tự (Phụ lục B đã sửa cho khớp).
+7. (M1) Quyền: bếp được bàn giao đơn nhận tại quầy (`ready → completed/no_show`) vì bếp = Rêu; shipper được `ready → delivering`, không được huỷ.
+8. (M1) Regex chuyển khoản có `(?!\d)` để không khớp nhầm số tham chiếu ngân hàng dính liền.
 
 ## Câu hỏi đang treo cho chủ quán
 
@@ -47,12 +59,13 @@ CI GitHub Actions (`.github/workflows/ci.yml`) **chưa được xác nhận ch�
 2. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
 3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
-## M1 — việc cần làm (BLUEPRINT §7, §14, §15)
+## M2 — việc cần làm (BLUEPRINT §6, §15)
 
-- `lib/domain/types.ts` (Product, Zone, PickupPoint, Batch, SlotView, OvenStatus, Settings…), `oven-status.ts` (§7.2), `capacity.ts` (§7.3), `pricing.ts` (§7.4), `order-status.ts` + `canTransition` (§7.5), `prep.ts` (§7.6), `order-code.ts` (§7.8).
-- Fixture **Phụ lục A** (catalog, BOM, lịch, khu vực) + **Phụ lục B** (12 đơn 06/11/2026) trong `lib/domain/__tests__/fixtures.ts`; test `buildPrepReport` khớp **từng con số** bảng kết quả Phụ lục B.
-- Coverage `lib/domain` ≥ 95% → **cần cài `@vitest/coverage-v8`** (chưa có) + script `test:coverage`.
-- Ràng buộc: thuần (không import DB/Next/React), mọi hàm nhận `now`, tiền là integer.
+- **Chủ quán phải làm trước:** tạo dự án Supabase (region Singapore), điền `DATABASE_URL` (pooler 6543) & `DIRECT_URL` (5432) vào `.env.local` / biến môi trường. Agent không nhận mật khẩu qua chat.
+- `lib/server/db/schema.ts` (Drizzle, §6.2 + CHECK/UNIQUE/index §6.2–6.3), `client.ts` (postgres.js, `prepare: false` cho pooler), migration kèm **bật RLS mọi bảng, không policy** (§12), `seed.ts` import `data/seed.ts` (script `db:seed` đang trỏ `node … lib/server/db/seed.ts` — Node chạy TS trực tiếp nhưng **không hiểu alias `@/`** → dùng import tương đối hoặc thêm `tsx`).
+- `ensureBatches(from, days)` idempotent từ slot template (giờ qua `vnInstant`), DAL `catalog` (`'use cache'` + `cacheTag('catalog')`), `schedule` → `getOvenStatus(now)` gọi `computeOvenStatus`. Mọi file `lib/server/*` có `import 'server-only'`.
+- Integration test với Postgres thật (service container trong CI, TODO đã ghi trong `ci.yml`).
+- Chấp nhận: `db:migrate && db:seed` trên DB trống chạy được; `getOvenStatus(now)` đúng với seed.
 
 ## Bẫy môi trường đã gặp
 
