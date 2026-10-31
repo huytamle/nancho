@@ -28,7 +28,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| **M8 — Checklist & Sổ tay** | ✅ trên nhánh (31/10/2026), chưa lên `main` | xem `git log` |
+| **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | M9–M11 (chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M9 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
