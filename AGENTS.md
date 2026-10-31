@@ -10,4 +10,4 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # THE HEAT PIZZA — project blueprint
 
-Before building any feature, read `docs/BLUEPRINT.md` (architecture, specs, data model, milestones M0–M6) and follow its rules in §0. Marketing context lives in `docs/MARKETING.md`.
+Start every session by reading `docs/LOG.md` (progress, decisions, open questions, next milestone). Before building any feature, read `docs/BLUEPRINT.md` (architecture, specs, data model, milestones M0–M6) and follow its rules in §0. Marketing context lives in `docs/MARKETING.md`.
