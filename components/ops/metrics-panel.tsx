@@ -97,14 +97,16 @@ export function MetricsPanel({ view }: { view: MetricsView }) {
         <p className="mt-1 text-sm text-secondary">{t.pnlHint}</p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           {p.segments.map((s) => (
-            <dl key={s.segment} className="rounded-2xl bg-elevated px-4 py-3 text-[15px]">
-              <p className="font-semibold">{SEGMENT_LABEL[s.segment]}</p>
+            <div key={s.segment} className="rounded-2xl bg-elevated px-4 py-3 text-[15px]">
+              <h3 className="font-semibold">{SEGMENT_LABEL[s.segment]}</h3>
+              <dl>
               <Row k={t.revenue} v={money(s.revenue)} />
               <Row k={t.cogs} v={money(s.cogs)} testId={`m-cogs-${s.segment}`} />
               <Row k={t.foodCost} v={pctOrDash(s.foodCostPct)} testId={`m-fc-${s.segment}`} />
               {s.shrink ? <Row k={t.shrink} v={money(s.shrink)} /> : null}
               <Row k={t.gross} v={money(s.gross)} strong />
-            </dl>
+              </dl>
+            </div>
           ))}
         </div>
         <dl className="mt-3 divide-y divide-line text-[15px]">
@@ -117,17 +119,17 @@ export function MetricsPanel({ view }: { view: MetricsView }) {
           {p.labor !== undefined && p.labor !== null ? (
             <>
               <Row k={`${t.labor} (${pctOrDash(p.laborPct ?? null)})`} v={money(p.labor)} testId="m-labor" />
-              {view.laborNote?.estimated ? (
-                <p className="py-1 text-xs text-secondary">
-                  {t.laborEstimated}
-                  {view.laborNote.missingRate ? ` · ${t.missingRate(view.laborNote.missingRate)}` : ""}
-                </p>
-              ) : null}
               <Row k={t.prime} v={`${money(p.prime ?? 0)} (${pctOrDash(p.primePct ?? null)})`} />
               <Row k={t.net} v={money(p.net ?? 0)} strong testId="m-net" />
             </>
           ) : null}
         </dl>
+        {view.laborNote?.estimated ? (
+          <p className="mt-1 text-xs text-secondary">
+            {t.labor}: {t.laborEstimated}
+            {view.laborNote.missingRate ? ` · ${t.missingRate(view.laborNote.missingRate)}` : ""}
+          </p>
+        ) : null}
         <div className="mt-3 grid grid-cols-2 gap-2">
           <Stat label={t.perHour} value={view.revenuePerHour !== null ? money(view.revenuePerHour) : "—"} sub={t.hours((view.laborMinutes / 60).toLocaleString("vi-VN", { maximumFractionDigits: 1 }))} testId="m-per-hour" />
           <Stat label={t.foodCost} value={pctOrDash(p.foodCostPct)} />

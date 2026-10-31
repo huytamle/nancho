@@ -34,6 +34,7 @@ test("chỉ số tháng: owner thấy chi phí nhân sự, quản lý thì khôn
   await seedPayRate(STAFF.barista, 25_000);
 
   await login(page, STAFF.owner);
+  await page.goto("/admin/van-hanh");
   await opsTabs(page).getByRole("button", { name: "Chỉ số" }).click();
   await expect(page).toHaveURL(/tab=chi-so/);
   await expect(page.getByTestId("m-month-revenue")).toHaveText("1.500.000đ");
