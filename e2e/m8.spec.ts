@@ -30,12 +30,19 @@ test.afterAll(closeDb);
 
 test("pha chế làm checklist mở ca: tick, số đo ngoài ngưỡng báo đỏ, xong 6/6", async ({ page }) => {
   await login(page, STAFF.barista, /\/admin\/van-hanh$/);
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Sổ tay", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Kho", "Sổ tay", "Nhân viên"]);
   await tabs(page).getByRole("button", { name: "Việc" }).click();
   await expect(page).toHaveURL(/tab=viec/);
 
-  // Chỉ checklist của vai pha chế/phục vụ — không có "Mở ca — Bếp".
-  await expect(page.getByRole("heading", { level: 2 })).toHaveText(["Mở ca — Quầy café", "Nhiệt độ tủ (giữa ca)", "Đóng ca", "Vệ sinh tuần"]);
+  // Chỉ checklist của vai pha chế/phục vụ — không có "Mở ca — Bếp". Kho (M10): cảnh báo ở đầu, kiểm nhanh ở cuối.
+  await expect(page.getByRole("heading", { level: 2 })).toHaveText([
+    "Kho cần chú ý",
+    "Mở ca — Quầy café",
+    "Nhiệt độ tủ (giữa ca)",
+    "Đóng ca",
+    "Vệ sinh tuần",
+    "Kiểm nhanh cuối ca",
+  ]);
   const open = page.getByRole("region", { name: "Mở ca — Quầy café" });
   await expect(open.getByTestId("run-2-progress")).toHaveText("0/6");
 

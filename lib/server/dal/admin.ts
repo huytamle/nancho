@@ -6,6 +6,7 @@ import type { ISODate } from "@/lib/domain/time";
 import type { DayStatus, OrderStatus, PaymentMethod } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
+import { deductSale } from "@/lib/server/dal/stock";
 
 // Thao tác của Kitchen Dashboard (§8.2, §10). Server Action lo zod + requireStaff; nghiệp vụ ở đây để
 // integration test gọi thẳng. Mọi thao tác ghi order_events với actor = "staff:<id>".
@@ -88,6 +89,8 @@ export async function advanceOrdersInTx(
     });
     result.updated.push(o.id);
   }
+  // Ra lò = bánh đã nướng → trừ kho theo định lượng (§17.8), mỗi đơn đúng một lần.
+  if (to === "ready") await deductSale(tx, result.updated, ctx.actor.id, ctx.now);
   return result;
 }
 

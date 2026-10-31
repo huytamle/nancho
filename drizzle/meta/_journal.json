@@ -43,6 +43,13 @@
       "when": 1793442596852,
       "tag": "0005_sale_day",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793446088682,
+      "tag": "0006_stock",
+      "breakpoints": true
     }
   ]
 }

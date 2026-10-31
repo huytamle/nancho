@@ -24,6 +24,8 @@ import { sendMonthlyExpenseSummary } from "@/lib/server/dal/ops";
 import { releaseExpiredHolds } from "@/lib/server/dal/holds";
 import { loadHandovers, type HandoverView } from "@/lib/server/dal/sale-day";
 import { ensureBatches } from "@/lib/server/dal/schedule";
+import { onHandMap } from "@/lib/server/dal/stock";
+import { saleUsage } from "@/lib/domain/stock";
 import { loadSettings } from "@/lib/server/dal/settings";
 
 // Dữ liệu Kitchen Dashboard (§10) cho một ngày phục vụ. Không cache (§5.3) — bếp cần số thật.
@@ -109,6 +111,11 @@ export type KitchenDay = {
   points: { id: number; name: string }[];
   /** Bàn giao tiền COD theo shipper (§18.4). */
   handovers: HandoverView;
+  /**
+   * Cột "Tồn / đủ / thiếu" ở tab Chuẩn bị (§17.8) — chỉ nguyên liệu theo dõi kho. `need` = lượng còn cần cho các
+   * đơn chưa ra lò (đơn đã ra lò đã trừ kho).
+   */
+  stock: Record<string, { onHand: number; need: number }>;
 };
 
 const PAST_DAYS = 1;
@@ -217,6 +224,15 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
       })),
   }));
 
+  const tracked = ingredientRows.filter((i) => i.trackStock).map((i) => i.id);
+  const onHand = tracked.length ? await onHandMap(db, tracked) : new Map<string, number>();
+  const need = saleUsage(
+    prepOrders.filter((o) => o.status === "placed" || o.status === "confirmed" || o.status === "baking"),
+    productRows,
+    recipeRows,
+  );
+  const stock = Object.fromEntries(tracked.map((id) => [id, { onHand: onHand.get(id) ?? 0, need: need.get(id) ?? 0 }]));
+
   const daysAhead = settings.ordering.daysAhead;
   return {
     date,
@@ -270,6 +286,7 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
     routes: routeRows.map((r) => ({ id: r.id, name: r.name })),
     points: pointRows.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name })),
     handovers,
+    stock,
   };
 }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pathToFileURL } from "node:url";
 import {
   seedIngredients,
@@ -11,6 +11,7 @@ import {
   seedZones,
 } from "@/data/seed";
 import { seedChecklistTemplates, seedHandbookPages } from "@/data/seed-ops";
+import { seedFormulas, seedStockIngredients, seedStockProfiles } from "@/data/seed-stock";
 import { vnDateOf } from "@/lib/domain/time";
 import { serverNow } from "@/lib/server/clock";
 import { closeDb, getDb, type Db } from "@/lib/server/db/client";
@@ -45,6 +46,16 @@ export async function seedStatic(db: Db = getDb()) {
     // M8: mẫu checklist & sổ tay khởi đầu (không ghi đè bản chủ quán đã sửa).
     await tx.insert(t.checklistTemplates).values(seedChecklistTemplates).onConflictDoNothing();
     await tx.insert(t.handbookPages).values(seedHandbookPages).onConflictDoNothing();
+
+    // M10: kho — nguyên liệu thô & hàng bán lại, hồ sơ kho cho nguyên liệu cũ (chỉ khi chưa chỉnh), công thức sản xuất.
+    await tx.insert(t.ingredients).values(seedStockIngredients).onConflictDoNothing();
+    for (const [id, p] of Object.entries(seedStockProfiles)) {
+      await tx
+        .update(t.ingredients)
+        .set({ ...p, purchaseUnit: p.purchaseUnit ?? null, purchaseFactor: p.purchaseFactor ?? null })
+        .where(and(eq(t.ingredients.id, id), eq(t.ingredients.trackStock, false), sql`cardinality(${t.ingredients.aliases}) = 0`));
+    }
+    await tx.insert(t.productionFormulas).values(seedFormulas).onConflictDoNothing();
 
     // Id serial được chèn tay → đẩy sequence lên để bản ghi admin thêm sau không trùng khoá.
     for (const table of ["routes", "zones", "pickup_points", "checklist_templates"]) {

@@ -21,6 +21,17 @@ import {
   type OpsActor,
 } from "@/lib/server/dal/ops";
 import { pauseOvenCore, resumeOvenCore, SALE_DAY_ROLES } from "@/lib/server/dal/sale-day";
+import {
+  attachBillPhotoCore,
+  debtRows,
+  expenseStockOffer,
+  payDebtCore,
+  recordDebtCore,
+  stockInBillCore,
+  stockInExpenseCore,
+  type StockOffer,
+} from "@/lib/server/dal/stock";
+import { billCode, billText, debtSummaryText, payDebtText, qtyText, stockInText } from "@/lib/stock-text";
 import type { TelegramApi } from "@/lib/server/notify/telegram";
 import { hasRole } from "@/lib/domain/roles";
 
@@ -66,8 +77,19 @@ function allowed(deps: BotDeps): number[] {
   return [process.env.TELEGRAM_CHAT_ID, process.env.TELEGRAM_OPS_CHAT_ID].filter(Boolean).map(Number);
 }
 
-const actionsKeyboard = (id: number) => ({
-  inline_keyboard: [[{ text: "🏷 Đổi nhóm", callback_data: `c:${id}` }, { text: "❌ Huỷ", callback_data: `x:${id}` }]],
+const DEBT_HELP = "Cú pháp: /no Cô Nhiều 3 thùng sting, 2 thùng pepsi 480k — trả: /trano Cô Nhiều 480k [#tui|#ck] — xem: /congno";
+
+/** Nút dưới tin chi phí; `offer` = nguyên liệu khớp → hỏi nhập kho (§17.8). */
+const actionsKeyboard = (id: number, offer?: StockOffer | null) => ({
+  inline_keyboard: [
+    ...(offer
+      ? [[{ text: `📦 Nhập kho ${qtyText(offer.qty, offer.unit)} ${offer.label}`, callback_data: `k:${id}` }, { text: "Chỉ chi phí", callback_data: `o:${id}` }]]
+      : []),
+    [{ text: "🏷 Đổi nhóm", callback_data: `c:${id}` }, { text: "❌ Huỷ", callback_data: `x:${id}` }],
+  ],
+});
+const billKeyboard = (id: number, offers: StockOffer[]) => ({
+  inline_keyboard: [[{ text: `📦 Nhập kho (${offers.map((o) => o.label).join(", ")})`, callback_data: `n:${id}` }, { text: "Chỉ ghi nợ", callback_data: `m:${id}` }]],
 });
 const categoryKeyboard = (id: number) => {
   const rows: { text: string; callback_data: string }[][] = [];
@@ -120,20 +142,32 @@ async function onMessage(msg: z.infer<typeof Message>, db: Db, deps: BotDeps): P
     return "handled";
   }
 
-  // Ảnh trả lời tin xác nhận của bot → đính kèm vào chứng từ.
+  // Ảnh trả lời tin xác nhận của bot → đính kèm vào chứng từ (hoặc phiếu nợ NCC).
   if (!cmd) {
     if (!photo || !msg.reply_to_message?.from?.is_bot) return "ignored";
+    const replyTo = msg.reply_to_message.message_id;
     const [e] = await db
       .select({ id: t.expenses.id })
       .from(t.expenses)
-      .where(and(eq(t.expenses.telegramChatId, chat.id), eq(t.expenses.telegramMsgId, msg.reply_to_message.message_id)));
-    if (!e) return "ignored";
+      .where(and(eq(t.expenses.telegramChatId, chat.id), eq(t.expenses.telegramMsgId, replyTo)));
+    const [bill] = e
+      ? []
+      : await db
+          .select({ id: t.supplierBills.id })
+          .from(t.supplierBills)
+          .where(and(eq(t.supplierBills.telegramChatId, chat.id), eq(t.supplierBills.telegramMsgId, replyTo)));
+    if (!e && !bill) return "ignored";
     const actor = await staffByTelegram(from.id, db);
     if (!actor) {
       await reply(NOT_LINKED);
       return "handled";
     }
     const fileId = await storePhoto(photo, actor, db, deps);
+    if (bill) {
+      const res = await attachBillPhotoCore(bill.id, fileId, { actor, now: deps.now, db });
+      await reply(res.ok ? `📎 Đã gắn ảnh vào ${billCode(bill.id)}.` : err[res.reason]);
+      return "handled";
+    }
     const res = await attachExpensePhotoCore(e.id, { fileId, telegramFileId: photo }, { actor, now: deps.now, db });
     await reply(res.ok ? `📎 Đã gắn ảnh vào ${expenseCode(e.id)}.` : err[res.reason]);
     return "handled";
@@ -162,8 +196,43 @@ async function onMessage(msg: z.infer<typeof Message>, db: Db, deps: BotDeps): P
 
   switch (cmd.kind) {
     case "invalid":
-      await reply(cmd.reason === "code" ? "Cú pháp: /chihuy C123" : `Chưa đọc được ${cmd.reason === "amount" ? "số tiền" : "nội dung chi"}.\n\n${BOT_HELP}`);
+      await reply(
+        cmd.reason === "code"
+          ? "Cú pháp: /chihuy C123"
+          : cmd.reason === "debt" || cmd.reason === "pay_debt"
+            ? DEBT_HELP
+            : `Chưa đọc được ${cmd.reason === "amount" ? "số tiền" : "nội dung chi"}.\n\n${BOT_HELP}`,
+      );
       return "handled";
+    case "debts": {
+      if (!canSpend(actor)) {
+        await reply(NO_RIGHT);
+        return "handled";
+      }
+      await reply(debtSummaryText(await debtRows(db)));
+      return "handled";
+    }
+    case "debt": {
+      const fileId = photo && canSpend(actor) ? await storePhoto(photo, actor, db, deps) : null;
+      const res = await recordDebtCore({ supplier: cmd.supplier, lines: cmd.lines, amount: cmd.amount, photo: fileId }, { actor, now: deps.now, db });
+      if (!res.ok) {
+        await reply(res.reason === "forbidden" ? NO_RIGHT : err[res.reason]);
+        return "handled";
+      }
+      const text = billText({ id: res.billId, supplier: res.supplier, lines: res.lines, amount: cmd.amount, by: actor.name, debt: res.debt });
+      const sent = await reply(text, res.stockable.length ? { reply_markup: billKeyboard(res.billId, res.stockable) } : {});
+      if (sent) await db.update(t.supplierBills).set({ telegramChatId: chat.id, telegramMsgId: sent.message_id }).where(eq(t.supplierBills.id, res.billId));
+      return "handled";
+    }
+    case "pay_debt": {
+      const res = await payDebtCore({ supplier: cmd.supplier, amount: cmd.amount, source: cmd.source }, { actor, now: deps.now, db });
+      if (!res.ok) {
+        await reply(res.reason === "forbidden" ? NO_RIGHT : res.reason === "not_found" ? `Không thấy nhà cung cấp "${cmd.supplier}". Gõ /congno để xem tên.` : err[res.reason]);
+        return "handled";
+      }
+      await reply(payDebtText({ ...res, amount: cmd.amount, source: cmd.source, expenseCode: expenseCode(res.expenseId) }));
+      return "handled";
+    }
     case "summary": {
       if (!canSpend(actor)) {
         await reply(NO_RIGHT);
@@ -196,7 +265,8 @@ async function onMessage(msg: z.infer<typeof Message>, db: Db, deps: BotDeps): P
         await reply(err[res.reason]);
         return "handled";
       }
-      const sent = await reply(expenseText({ id: res.id, ...cmd, by: actor.name }), { reply_markup: actionsKeyboard(res.id) });
+      const offer = await expenseStockOffer(res.id, db);
+      const sent = await reply(expenseText({ id: res.id, ...cmd, by: actor.name }), { reply_markup: actionsKeyboard(res.id, offer) });
       if (sent) await db.update(t.expenses).set({ telegramChatId: chat.id, telegramMsgId: sent.message_id }).where(eq(t.expenses.id, res.id));
       return "handled";
     }
@@ -218,13 +288,13 @@ async function refreshMessage(row: ExpenseRow, db: Db, deps: BotDeps, cancelled 
     chat_id: row.telegramChatId,
     message_id: row.telegramMsgId,
     text: expenseText({ ...row, by: by?.name ?? "", cancelled: cancelled || row.cancelledAt !== null }),
-    ...(cancelled || row.cancelledAt ? {} : { reply_markup: actionsKeyboard(row.id) }),
+    ...(cancelled || row.cancelledAt ? {} : { reply_markup: actionsKeyboard(row.id, await expenseStockOffer(row.id, db)) }),
   });
 }
 
 async function onCallback(cq: NonNullable<TelegramUpdate["callback_query"]>, db: Db, deps: BotDeps): Promise<Result> {
   const answer = (text?: string) => deps.api("answerCallbackQuery", { callback_query_id: cq.id, ...(text ? { text } : {}) });
-  const m = cq.data?.match(/^([cbsx]):(\d+)(?::([a-z-]+))?$/);
+  const m = cq.data?.match(/^([cbsxkonm]):(\d+)(?::([a-z-]+))?$/);
   const chat = cq.message?.chat;
   if (!m || !chat || (chat.type !== "private" && !allowed(deps).includes(chat.id))) {
     await answer();
@@ -237,13 +307,32 @@ async function onCallback(cq: NonNullable<TelegramUpdate["callback_query"]>, db:
   }
   const id = Number(m[2]);
   const ctx = { actor, now: deps.now, db };
+  const editMarkup = (reply_markup: object) =>
+    deps.api("editMessageReplyMarkup", { chat_id: chat.id, message_id: cq.message!.message_id, reply_markup });
+
+  // Phiếu nợ NCC: [📦 Nhập kho] · [Chỉ ghi nợ].
+  if (m[1] === "n" || m[1] === "m") {
+    if (m[1] === "m") {
+      await editMarkup({ inline_keyboard: [] });
+      await answer("Chỉ ghi nợ, không nhập kho");
+      return "handled";
+    }
+    const res = await stockInBillCore(id, ctx);
+    if (!res.ok) {
+      await answer(res.reason === "duplicate" ? "Phiếu này đã nhập kho rồi" : err[res.reason]);
+      return "handled";
+    }
+    await editMarkup({ inline_keyboard: [] });
+    await deps.api("sendMessage", { chat_id: chat.id, text: stockInText(res.items), reply_parameters: { message_id: cq.message!.message_id } });
+    await answer("Đã nhập kho");
+    return "handled";
+  }
+
   const [row] = await db.select().from(t.expenses).where(eq(t.expenses.id, id));
   if (!row) {
     await answer(err.not_found);
     return "handled";
   }
-  const editMarkup = (reply_markup: object) =>
-    deps.api("editMessageReplyMarkup", { chat_id: chat.id, message_id: cq.message!.message_id, reply_markup });
 
   switch (m[1]) {
     case "c":
@@ -255,9 +344,24 @@ async function onCallback(cq: NonNullable<TelegramUpdate["callback_query"]>, db:
       await answer();
       return "handled";
     case "b":
-      await editMarkup(actionsKeyboard(id));
+      await editMarkup(actionsKeyboard(id, await expenseStockOffer(id, db)));
       await answer();
       return "handled";
+    case "o":
+      await editMarkup(actionsKeyboard(id));
+      await answer("Chỉ ghi chi phí, không nhập kho");
+      return "handled";
+    case "k": {
+      const res = await stockInExpenseCore(id, ctx);
+      if (!res.ok) {
+        await answer(res.reason === "duplicate" ? "Chứng từ này đã nhập kho rồi" : err[res.reason]);
+        return "handled";
+      }
+      await editMarkup(actionsKeyboard(id));
+      await deps.api("sendMessage", { chat_id: chat.id, text: stockInText([res.offer]), reply_parameters: { message_id: cq.message!.message_id } });
+      await answer("Đã nhập kho");
+      return "handled";
+    }
     case "s": {
       if (!m[3] || !isExpenseCategory(m[3])) {
         await answer(err.invalid);

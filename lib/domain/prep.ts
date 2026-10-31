@@ -76,7 +76,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 const totalOf = (c: Count) => c.sold + c.gift;
 
 /** Đếm theo món sau khi nổ combo. */
-function tally(orders: OrderWithItems[], products: Map<string, Product>): Map<string, Count> {
+export function tally(orders: OrderWithItems[], products: Map<string, Product>): Map<string, Count> {
   const counts = new Map<string, Count>();
   const add = (productId: string, qty: number, isGift: boolean) => {
     const c = counts.get(productId) ?? { sold: 0, gift: 0 };

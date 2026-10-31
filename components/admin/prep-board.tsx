@@ -5,7 +5,9 @@ import { sendPrepTelegram } from "@/app/actions/admin";
 import { copyText, useAdminAction, useKitchen } from "@/components/admin/use-admin";
 import { copy } from "@/data/copy";
 import { formatRemaining, vnTimeLabel } from "@/lib/domain/time";
+import { opsCopy } from "@/data/copy-ops";
 import { batchMains, ingredientDetail, ingredientQty, prepSummaryText, warningText } from "@/lib/kitchen-text";
+import { qtyText } from "@/lib/stock-text";
 
 const t = copy.admin.prep;
 
@@ -77,6 +79,8 @@ export function PrepBoard() {
               {prep.totals.ingredients.map((i) => {
                 const done = pulled.has(i.ingredientId);
                 const detail = ingredientDetail(i);
+                const st = day.stock[i.ingredientId];
+                const short = st ? Math.max(0, Math.round((st.need - st.onHand) * 1000) / 1000) : 0;
                 return (
                   <li key={i.ingredientId}>
                     <label className="flex min-h-14 cursor-pointer items-center gap-3 py-2">
@@ -89,6 +93,11 @@ export function PrepBoard() {
                       <span className={`min-w-0 flex-1 ${done ? "text-secondary line-through" : ""}`}>
                         <span className="block text-[17px] font-medium">{i.label}</span>
                         {detail ? <span className="block text-sm text-secondary">{detail}</span> : null}
+                        {st ? (
+                          <span className={`block text-sm font-medium ${short > 0 ? "text-warn" : "text-live"}`} data-testid={`stock-${i.ingredientId}`}>
+                            {opsCopy.stock.prepLine(qtyText(st.onHand, i.unit), short > 0 ? qtyText(short, i.unit) : null)}
+                          </span>
+                        ) : null}
                       </span>
                       <span className={`shrink-0 text-right text-lg font-semibold tabular-nums ${done ? "text-secondary" : ""}`} data-testid={`ing-${i.ingredientId}`}>
                         {ingredientQty(i)}

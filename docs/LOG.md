@@ -31,7 +31,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9.5 — Gói "Ngày bán"** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| M10–M11 (kho + công nợ NCC + biên lợi nhuận; chỉ số + trợ thủ Telegram) | 📝 Blueprint §15, §17.8, §17.10 (đã bổ sung 31/10/2026) | — |
+| **M10 — Kho 2 mức, công nợ NCC, biên lợi nhuận, kiểm nhanh ABC** | ✅ trên nhánh (31/10/2026) — chờ chủ quán bảo đưa lên `main` | xem `git log` |
+| M11 (chỉ số + kho café + báo cáo tối + trợ thủ Telegram) | 📝 Blueprint §15, §17.10 | — |
 | Giai đoạn 3 — ca linh hoạt (đăng ký/đổi ca, xin nghỉ) | 📝 khi ≥ 4 nhân viên (§15) | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
@@ -255,11 +256,35 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 2. Thử `/khoalo thử` rồi `/molo` trong nhóm Telegram (cần đã liên kết Telegram, vai owner/manager/bếp).
 3. Mua bút lông dầu cho quầy đóng gói; dán chú thích mã (T = thu · CK · +2S · R) cạnh chỗ đóng hộp.
 
-## M10 — lưu ý từ M9
+## M10 — lưu ý từ M9 (đã xử lý)
 
 - Chỉ số §17.10 "doanh thu/giờ công", "chi phí nhân sự %": giờ công lấy `timesheets.minutes` (đã gửi) hoặc `computeTimesheet` (nháp); tiền lương = `payslips.total` — **chỉ owner** (`loadPayrollView` trả null cho người khác; giữ nguyên nguyên tắc ở DTO).
 - `periodRevenue(period)` (pizza hoàn tất + café Sapo) đã có ở `dal/payroll.ts` — dùng lại.
 - Chủ quán cần: nhập đơn giá giờ cho từng người (tab Lương) trước ngày 1 tháng sau; nhập ngày lễ (Tết âm lịch!); vào quán bấm [Đây là Wi-Fi quán]; xếp lịch ca tuần để có đi muộn/`late_out`.
+
+## M10 — đã làm
+
+- **Bảng** (migration `0006_stock`): cột kho trên `ingredients` (`level`, `track_stock`, `purchase_unit/factor`, `avg_cost` numeric(12,4), `shelf_life_hours`, `par_level`, `aliases`, `count_class`, `count_roles`, `count_tolerance_pct`), `production_formulas`, `stock_moves` (tồn = Σ qty; index một phần chống trừ/nhập đôi), `stock_counts`, `suppliers`, `supplier_bills` (+ `paid_amount` để trả dần), `expenses.supplier_id`.
+- **Domain** `lib/domain/stock.ts` (+ `/no` `/trano` `/congno` trong `parseBotCommand`) — test `lib/domain/__tests__/stock.test.ts`; coverage `stock.ts` 99,5% dòng / 98% nhánh. `tally` của `prep.ts` giờ export (dùng chung cho trừ kho). Văn bản `lib/stock-text.ts`.
+- **DAL** `lib/server/dal/stock.ts`; `insertExpense` tách khỏi `recordExpenseCore` (`dal/ops.ts`) để nhập kho/trả nợ ghi chi trong cùng transaction. **Trừ kho khi đơn sang `ready`** — gắn vào `advanceOrdersInTx` (`dal/admin.ts`).
+- **Bot**: `/no`, `/trano`, `/congno`; nút `k:/o:` (nhập kho từ `/chi`), `n:/m:` (nhập kho từ phiếu nợ); ảnh trả lời phiếu nợ. BOT_HELP cập nhật.
+- **UI**: tab **Kho** (`components/ops/stock-panel.tsx`, `stock-manage.tsx`, `stock-ui.ts`): Tồn · Nhập · Công nợ · Làm & huỷ · Kiểm kê · Biên lãi + hồ sơ mặt hàng; tab Việc: "Kho cần chú ý" + "Kiểm nhanh cuối ca" (đếm mù). Tab Chuẩn bị (bếp): "Tồn x · đủ / thiếu y". Owner có 8 tab → chữ 12px.
+- **Cron daily**: `runStockCron` báo kho dưới mức/sắp hết hạn một lần/ngày.
+- **Test:** unit 225 · int 123 (`stock.int.test.ts` 14: Phụ lục B tồn sau ngày khớp từng dòng + Ra lò hai lần trừ một lần, Ra lò song song, `no_show` vẫn trừ, huỷ trước lò không trừ, cột Tồn bếp, bình quân gia quyền + nhập song song, thùng 24 lon, sản xuất 2 mẻ bột (giá vốn 5.500đ/đế, hạn 72 giờ), huỷ có lý do, cảnh báo + cron một lần, kiểm nhanh theo vai trò → Telegram + DTO bếp không có tiền, kiểm kê tuần hao hụt tiền, biên lợi nhuận, `/no` → nhập kho một lần (song song) chia tiền theo giá vốn → `/congno` → `/trano` trả dần/trả dư, gửi lại update không ghi chi đôi, phiếu chưa giá điền khi trả, trả nợ song song, huỷ phiếu, `/chi` có số lượng → nhập kho một lần, hồ sơ mặt hàng) · e2e 120/120 — thêm `e2e/m10.spec.ts` (3 × 3 thiết bị: cột Tồn ở Chuẩn bị; nhập Pepsi ghi nợ → trả nợ → tồn 24 lon; kiểm nhanh đếm mù); `m8`/`m9`/`ops` cập nhật danh sách tab (thêm Kho) và tiêu đề tab Việc. `m95` (đếm ngược "còn 1[456] phút") có thể trượt ở thiết bị chạy cuối khi cả bộ chạy > 9 phút — đồng hồ TEST_NOW trôi theo giờ thật (bẫy đã ghi); chạy riêng thì xanh. `db.int` cập nhật số bảng (40) và số nguyên liệu.
+- **JS `/`**: M10 chỉ thêm 1 chuỗi lỗi (`no_debt`) vào `copy.ts`. Đo theo cách ở "Bẫy môi trường" (gzip mọi `<script src>` không `noModule` của `index.html`): 177,5 KB.
+- **Quyết định nhỏ (ghi lại):** trừ kho lúc `ready` thay vì lúc mẻ `done` — cùng kết quả cho [Ra lò] mẻ, và bắt được cả đơn ra lò lẻ. Kiểm nhanh cũng ghi `adjust` (số đếm là sự thật), không chỉ kiểm kê tuần. Phiếu nợ nhiều dòng chỉ có tổng tiền → chia giá vốn theo lượng × giá vốn hiện tại (chưa có giá vốn → theo lượng). Huỷ chứng từ chi **không** đảo dòng nhập kho (hàng đã nhận thật; sai thì kiểm kê).
+
+## M10 — việc của chủ quán để bật
+
+1. `npm run db:migrate && npm run db:seed` (migration `0006_stock`; seed thêm bột mì/men/sườn sống/Pepsi/Sting, công thức bột & sườn, hồ sơ kho — không đè chỉnh sửa).
+2. Tab **Kho → Biên lãi → Hồ sơ mặt hàng**: chỉnh mức tối thiểu, hạn dùng, từ khoá (để `/chi`, `/no` khớp đúng), nhóm A/B/C, ai đếm. Công thức sản xuất hiện là placeholder (1.500 g bột + 15 g men → 6 đế; 550 g sườn → 1 túi) — báo lại số thật để sửa trong seed/DB.
+3. Ngày đầu: **Kiểm kê** đếm mọi mặt hàng theo dõi (tạo tồn đầu); nhập kho có thành tiền để có giá vốn → Biên lãi mới có số.
+
+## M11 — lưu ý từ M10
+
+- Food cost % = (tồn đầu + nhập − tồn cuối) / doanh thu: tiền theo `stock_moves.qty × unit_cost` (đã có tổng tháng nhập/huỷ/lệch ở `loadStockView().month`); "hao hụt" = Σ `adjust` + `waste`.
+- Báo cáo tối "tồn nhóm A sau Ra lò" và "cần đặt …": dùng `stockAlerts()` / `quickCountItems` + `par_level`. Nhắc đi chợ = `below_par`.
+- Định lượng đồ uống (M11): thêm vào `recipe_lines` với sản phẩm café (hoặc bảng riêng) → `saleUsage`/`productCost` dùng lại được; bao bì (ly, đá, ống hút) là nguyên liệu `goods`.
 
 ## Bẫy môi trường đã gặp
 

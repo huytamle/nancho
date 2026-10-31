@@ -288,7 +288,13 @@ export type ExpenseInput = {
 
 export async function recordExpenseCore(input: ExpenseInput, ctx: Ctx): Promise<{ ok: true; id: number } | Fail> {
   if (!canSpend(ctx.actor)) return fail("forbidden");
-  const db = ctx.db ?? getDb();
+  const id = await insertExpense(ctx.db ?? getDb(), input, ctx.actor, ctx.now);
+  return { ok: true, id };
+}
+
+/** Ghi một chứng từ chi (đã kiểm quyền) — dùng chung cho form, bot, nhập kho và trả nợ NCC (M10). */
+export async function insertExpense(db: Executor, input: ExpenseInput & { supplierId?: number | null }, actor: OpsActor, now: Date): Promise<number> {
+  const ctx = { actor, now };
   const [row] = await db
     .insert(t.expenses)
     .values({
@@ -301,11 +307,12 @@ export async function recordExpenseCore(input: ExpenseInput, ctx: Ctx): Promise<
       spentBy: ctx.actor.id,
       photo: input.photo ?? null,
       telegramFileId: input.telegramFileId ?? null,
+      supplierId: input.supplierId ?? null,
       createdAt: ctx.now,
     })
     .returning({ id: t.expenses.id });
   await logEvent(db, "expense_recorded", ctx.actor, { id: row.id, amount: input.amount, source: input.source }, ctx.now);
-  return { ok: true, id: row.id };
+  return row.id;
 }
 
 type ExpenseRow = typeof t.expenses.$inferSelect;

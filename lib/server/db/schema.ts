@@ -31,6 +31,7 @@ import type { CashCounts } from "@/lib/domain/cash";
 import type { ChecklistDone, ChecklistItem } from "@/lib/domain/checklist";
 import type { ExpenseCategory } from "@/lib/domain/expense-command";
 import type { PayLine } from "@/lib/domain/payroll";
+import type { BillLine, CountClass, CountLine, FormulaLine, WasteReason } from "@/lib/domain/stock";
 import type { Role } from "@/lib/domain/roles";
 import type { TimeFlag } from "@/lib/domain/worktime";
 import type { ComboGroup, ISODate } from "@/lib/domain/types";
@@ -68,6 +69,9 @@ export const checklistMoment = pgEnum("checklist_moment", ["open", "during", "cl
 export const handbookKind = pgEnum("handbook_kind", ["sop", "recipe"]);
 export const timesheetStatus = pgEnum("timesheet_status", ["draft", "submitted", "acknowledged"]);
 export const payslipStatus = pgEnum("payslip_status", ["draft", "approved", "paid"]);
+export const stockLevel = pgEnum("stock_level", ["raw", "prep", "goods"]);
+export const stockMoveKind = pgEnum("stock_move_kind", ["purchase", "produce_in", "produce_out", "sale", "waste", "adjust"]);
+export const billStatus = pgEnum("bill_status", ["open", "paid", "cancelled"]);
 
 // ── Thực đơn ──
 
@@ -98,14 +102,38 @@ export const products = pgTable(
   ],
 ).enableRLS();
 
-export const ingredients = pgTable("ingredients", {
-  id: text().primaryKey(),
-  label: text().notNull(),
-  unit: text().notNull(),
-  unitWeightG: integer(),
-  storage: text().notNull(),
-  sort: smallint().notNull().default(0),
-}).enableRLS();
+/**
+ * Nguyên liệu (bán thành phẩm, hàng dùng thẳng) + cột kho (§17.8, M10). `avg_cost` là đ/đơn vị gốc có phần lẻ —
+ * ngoại lệ duy nhất của luật tiền nguyên; thành tiền luôn làm tròn về int.
+ */
+export const ingredients = pgTable(
+  "ingredients",
+  {
+    id: text().primaryKey(),
+    label: text().notNull(),
+    unit: text().notNull(),
+    unitWeightG: integer(),
+    storage: text().notNull(),
+    sort: smallint().notNull().default(0),
+    level: stockLevel().notNull().default("prep"),
+    trackStock: boolean().notNull().default(false),
+    purchaseUnit: text(),
+    purchaseFactor: numeric({ precision: 12, scale: 3, mode: "number" }),
+    avgCost: numeric({ precision: 12, scale: 4, mode: "number" }).notNull().default(0),
+    shelfLifeHours: integer(),
+    parLevel: numeric({ precision: 12, scale: 3, mode: "number" }),
+    aliases: text().array().notNull().default(sql`'{}'::text[]`),
+    countClass: text().$type<CountClass>().notNull().default("C"),
+    countRoles: role().array().$type<Role[]>().notNull().default(sql`'{kitchen}'::role[]`),
+    countTolerancePct: smallint().notNull().default(5),
+  },
+  (t) => [
+    check("ingredients_count_class_check", sql`${t.countClass} IN ('A', 'B', 'C')`),
+    check("ingredients_cost_check", sql`${t.avgCost} >= 0`),
+    check("ingredients_purchase_check", sql`(${t.purchaseUnit} IS NULL) = (${t.purchaseFactor} IS NULL) AND coalesce(${t.purchaseFactor}, 1) > 0`),
+    check("ingredients_stock_check", sql`coalesce(${t.shelfLifeHours}, 1) > 0 AND coalesce(${t.parLevel}, 0) >= 0 AND ${t.countTolerancePct} BETWEEN 0 AND 100`),
+  ],
+).enableRLS();
 
 export const recipeLines = pgTable(
   "recipe_lines",
@@ -464,6 +492,8 @@ export const expenses = pgTable(
     telegramChatId: bigint({ mode: "number" }),
     telegramMsgId: integer(),
     cancelledAt: tstz(),
+    /** Trả nợ nhà cung cấp (M10) — chi phí này không nhập kho lần nữa. */
+    supplierId: integer().references((): AnyPgColumn => suppliers.id),
     createdAt: createdAt(),
   },
   (t) => [
@@ -735,6 +765,107 @@ export const feedback = pgTable(
   },
   (t) => [index().on(t.createdAt), check("feedback_comment_check", sql`char_length(${t.comment}) <= 300`)],
 ).enableRLS();
+
+// ── Kho 2 mức & công nợ nhà cung cấp (§17.8, M10) ──
+
+/** Công thức sản xuất bán thành phẩm: một mẻ `lines` → `output_qty` đơn vị `output_id` (VD 1 mẻ bột → 6 đế). */
+export const productionFormulas = pgTable(
+  "production_formulas",
+  {
+    id: serial().primaryKey(),
+    outputId: text()
+      .notNull()
+      .unique()
+      .references(() => ingredients.id),
+    outputQty: numeric({ precision: 12, scale: 3, mode: "number" }).notNull(),
+    lines: jsonb().$type<FormulaLine[]>().notNull(),
+  },
+  (t) => [check("production_formulas_qty_check", sql`${t.outputQty} > 0`)],
+).enableRLS();
+
+/** Nhà cung cấp (lấy hàng trước, trả sau). */
+export const suppliers = pgTable("suppliers", {
+  id: serial().primaryKey(),
+  name: text().notNull().unique(),
+  aliases: text().array().notNull().default(sql`'{}'::text[]`),
+  phone: text(),
+  isActive: boolean().notNull().default(true),
+  createdAt: createdAt(),
+}).enableRLS();
+
+/**
+ * Phiếu nợ NCC. `amount` null = chưa biết giá (điền khi trả). Trả dần: `paid_amount` cộng dồn, đủ → `paid`.
+ * Giá vốn ghi khi nhận hàng (stock_moves ref `bill`); chi phí ghi khi trả (expenses.supplier_id) — không tính hai lần.
+ */
+export const supplierBills = pgTable(
+  "supplier_bills",
+  {
+    id: serial().primaryKey(),
+    supplierId: integer()
+      .notNull()
+      .references(() => suppliers.id),
+    receivedAt: tstz().notNull(),
+    items: jsonb().$type<BillLine[]>().notNull(),
+    amount: integer(),
+    paidAmount: integer().notNull().default(0),
+    photo: text(),
+    status: billStatus().notNull().default("open"),
+    paidExpenseId: integer().references(() => expenses.id),
+    createdBy: integer()
+      .notNull()
+      .references(() => staff.id),
+    telegramChatId: bigint({ mode: "number" }),
+    telegramMsgId: integer(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.supplierId, t.status),
+    unique("supplier_bills_telegram_msg").on(t.telegramChatId, t.telegramMsgId),
+    check("supplier_bills_amount_check", sql`coalesce(${t.amount}, 0) >= 0 AND ${t.paidAmount} >= 0 AND (${t.amount} IS NULL OR ${t.paidAmount} <= ${t.amount})`),
+  ],
+).enableRLS();
+
+/**
+ * Sổ kho — **tồn = Σ qty**. Không sửa/xoá; sai thì thêm dòng `adjust`. `unit_cost` = đ/đơn vị gốc tại thời điểm ghi.
+ * Mỗi đơn chỉ trừ kho một lần (`sale`, ref `order`), mỗi chứng từ/phiếu chỉ nhập một lần (`purchase`) — index một phần.
+ */
+export const stockMoves = pgTable(
+  "stock_moves",
+  {
+    id: serial().primaryKey(),
+    ingredientId: text()
+      .notNull()
+      .references(() => ingredients.id),
+    qty: numeric({ precision: 12, scale: 3, mode: "number" }).notNull(),
+    kind: stockMoveKind().notNull(),
+    unitCost: numeric({ precision: 12, scale: 4, mode: "number" }).notNull().default(0),
+    refType: text().$type<"expense" | "bill" | "production" | "order" | "count" | "manual">(),
+    refId: text(),
+    reason: text().$type<WasteReason>(),
+    note: text(),
+    expiresAt: tstz(),
+    /** Người ghi (staff.id). Không FK — như `order_events.actor`, sổ kho là nhật ký, không chặn xoá nhân viên. */
+    createdBy: integer(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.ingredientId, t.createdAt),
+    uniqueIndex("stock_moves_once").on(t.kind, t.refType, t.refId, t.ingredientId).where(sql`${t.kind} IN ('sale', 'purchase')`),
+    check("stock_moves_qty_check", sql`${t.qty} <> 0`),
+    check("stock_moves_sign_check", sql`(${t.kind} IN ('purchase', 'produce_in')) = (${t.qty} > 0) OR ${t.kind} = 'adjust'`),
+  ],
+).enableRLS();
+
+/** Lần đếm kho: `weekly` (kiểm kê tuần mọi mục track_stock) · `quick` (kiểm nhanh ABC cuối ca). Đếm mù. */
+export const stockCounts = pgTable("stock_counts", {
+  id: serial().primaryKey(),
+  kind: text().$type<"weekly" | "quick">().notNull(),
+  lines: jsonb().$type<CountLine[]>().notNull(),
+  staffId: integer()
+    .notNull()
+    .references(() => staff.id),
+  createdAt: createdAt(),
+}, (t) => [index().on(t.createdAt)]).enableRLS();
 
 export type Order = typeof orders.$inferSelect;
 export type BatchRow = typeof batches.$inferSelect;

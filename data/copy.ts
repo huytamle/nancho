@@ -359,6 +359,7 @@ export const copy = {
       missing_rate: "Có người chưa có đơn giá giờ.",
       below_min: "Thấp hơn lương tối thiểu giờ.",
       refund_required: "Khách đã trả tiền — ghi hoàn tiền trước khi huỷ.",
+      no_debt: "Nhà cung cấp này không còn phiếu nợ nào.",
       server_error: "Lỗi máy chủ — thử lại.",
     },
     prep: {

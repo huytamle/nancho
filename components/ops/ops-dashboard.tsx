@@ -9,6 +9,7 @@ import { PayrollPanel } from "@/components/ops/payroll-panel";
 import { TimePanel } from "@/components/ops/time-panel";
 import { ShiftPanel } from "@/components/ops/shift-panel";
 import { StaffPanel } from "@/components/ops/staff-panel";
+import { QuickCount, StockAlerts, StockPanel } from "@/components/ops/stock-panel";
 import { Toaster } from "@/components/ui/toaster";
 import { copy } from "@/data/copy";
 import { opsCopy, type OpsTab } from "@/data/copy-ops";
@@ -16,16 +17,20 @@ import type { WorkView } from "@/lib/server/dal/checklist";
 import type { OpsView } from "@/lib/server/dal/ops";
 import type { PayrollView, TimeView } from "@/lib/server/dal/payroll";
 import type { OvenLockView } from "@/lib/server/dal/sale-day";
+import type { StockView } from "@/lib/server/dal/stock";
 
 const t = opsCopy;
 
-/** Tab theo quyền: chi phí chỉ owner/manager, lương chỉ owner (§17.2). */
-export const opsTabsFor = (v: OpsView["viewer"]): OpsTab[] =>
-  v.isOwner
+/** Tab theo quyền: chi phí chỉ owner/manager, lương chỉ owner, kho cho owner/manager/bếp/pha chế (§17.2). */
+export const opsTabsFor = (v: OpsView["viewer"], stock = false): OpsTab[] => {
+  const tabs: OpsTab[] = v.isOwner
     ? ["ca", "viec", "cong", "chi", "luong", "so-tay", "nhan-vien"]
     : v.canSpend
       ? ["ca", "viec", "cong", "chi", "so-tay", "nhan-vien"]
       : ["ca", "viec", "cong", "so-tay", "nhan-vien"];
+  if (stock) tabs.splice(tabs.indexOf("so-tay"), 0, "kho");
+  return tabs;
+};
 
 // Màn Vận hành (§17): Ca & két · Việc · Chi phí · Sổ tay · Nhân viên. Dữ liệu từ server; mutation gọi refresh() nên không cần poll.
 // Sổ tay là Server Component dựng sẵn (`handbook`) — Markdown không xuống client.
@@ -35,6 +40,7 @@ export function OpsDashboard({
   time,
   payroll,
   lock,
+  stock,
   handbook,
   bookPage,
   initialTab,
@@ -46,12 +52,14 @@ export function OpsDashboard({
   payroll: PayrollView | null;
   /** Khoá lò (§18.1) — chỉ owner/manager/kitchen. */
   lock: OvenLockView | null;
+  /** Kho (§17.8) — null nếu không có vai trò kho. */
+  stock: StockView | null;
   handbook: ReactNode;
   bookPage: string | null;
   initialTab: OpsTab;
   kitchen: boolean;
 }) {
-  const tabs = opsTabsFor(view.viewer);
+  const tabs = opsTabsFor(view.viewer, stock !== null);
   const [tab, setTab] = useState<OpsTab>(tabs.includes(initialTab) ? initialTab : "ca");
 
   function switchTab(next: OpsTab) {
@@ -82,7 +90,7 @@ export function OpsDashboard({
                 aria-current={tab === k ? "page" : undefined}
                 // > 5 tab trên điện thoại (owner/manager): chữ nhỏ hơn, cho xuống 2 dòng thay vì tràn ngang.
                 className={`flex min-h-16 w-full items-center justify-center px-0.5 text-center font-semibold lg:justify-start lg:rounded-2xl lg:px-4 lg:text-sm lg:whitespace-nowrap ${
-                  tabs.length > 5 ? "text-[13px] leading-tight" : "text-sm whitespace-nowrap"
+                  tabs.length > 7 ? "text-[12px] leading-tight" : tabs.length > 5 ? "text-[13px] leading-tight" : "text-sm whitespace-nowrap"
                 } ${
                   tab === k ? "text-accent lg:bg-elevated lg:text-text" : "text-secondary"
                 }`}
@@ -119,7 +127,13 @@ export function OpsDashboard({
           {tab === "ca" ? (
             <ShiftPanel view={view} work={work} lock={lock} />
           ) : tab === "viec" ? (
-            <ChecklistPanel work={work} />
+            <div className="space-y-5">
+              {stock ? <StockAlerts stock={stock} /> : null}
+              <ChecklistPanel work={work} />
+              {stock ? <QuickCount stock={stock} /> : null}
+            </div>
+          ) : tab === "kho" && stock ? (
+            <StockPanel stock={stock} />
           ) : tab === "cong" ? (
             <TimePanel time={time} />
           ) : tab === "chi" ? (

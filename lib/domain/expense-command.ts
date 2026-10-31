@@ -5,8 +5,11 @@
 //   /chi 320.000 gas #ck         → chuyển khoản từ TK hộ kinh doanh
 //   /chihuy C123 · /tonghop · /start <mã liên kết> · /help
 //   /khoalo [lý do] · /molo        → khoá/mở lò khẩn cấp (§18.1)
+//   /no Cô Nhiều 3 thùng sting, 2 thùng pepsi 480k → phiếu nợ nhà cung cấp (§17.8, M10)
+//   /trano Cô Nhiều 480k [#tui|#ck] · /congno       → trả nợ (ghi một chi phí) · nợ còn lại theo NCC
 
 import { fold, parseAmount } from "@/lib/domain/money-text";
+import { parseDebt, type DebtDraft } from "@/lib/domain/stock";
 
 export const EXPENSE_SOURCES = ["petty", "pocket", "bank"] as const;
 export type ExpenseSource = (typeof EXPENSE_SOURCES)[number];
@@ -77,7 +80,10 @@ export type BotCommand =
   | { kind: "help" }
   | { kind: "pause"; reason: string }
   | { kind: "resume" }
-  | { kind: "invalid"; reason: "amount" | "description" | "code" };
+  | ({ kind: "debt" } & DebtDraft)
+  | { kind: "pay_debt"; supplier: string; amount: number; source: ExpenseSource }
+  | { kind: "debts" }
+  | { kind: "invalid"; reason: "amount" | "description" | "code" | "debt" | "pay_debt" };
 
 /** Mã chứng từ hiển thị: C123. */
 export const expenseCode = (id: number) => `C${id}`;
@@ -113,12 +119,21 @@ export function parseBotCommand(text: string, botUsername?: string): BotCommand 
       return { kind: "pause", reason: rest.slice(0, 80) };
     case "molo":
       return { kind: "resume" };
+    case "no": {
+      const d = parseDebt(rest);
+      return d ? { kind: "debt", ...d } : { kind: "invalid", reason: "debt" };
+    }
+    case "trano":
+      return parsePayDebt(rest);
+    case "congno":
+      return { kind: "debts" };
     default:
       return null;
   }
 }
 
-function parseExpense(rest: string): BotCommand {
+/** Tách thẻ nguồn tiền (#tui, #ck, #hop) khỏi các từ còn lại. */
+function splitSource(rest: string): { source: ExpenseSource; words: string[] } {
   let source: ExpenseSource = "petty";
   const words: string[] = [];
   for (const w of rest.split(/\s+/).filter(Boolean)) {
@@ -126,6 +141,19 @@ function parseExpense(rest: string): BotCommand {
     if (tag) source = tag;
     else words.push(w);
   }
+  return { source, words };
+}
+
+/** `/trano Cô Nhiều 480k #ck` — số tiền là cụm cuối, NCC là phần trước. */
+function parsePayDebt(rest: string): BotCommand {
+  const { source, words } = splitSource(rest);
+  const amount = words.length >= 2 ? parseAmount(words.at(-1)!) : null;
+  const supplier = words.slice(0, -1).join(" ").trim();
+  return amount !== null && supplier ? { kind: "pay_debt", supplier: supplier.slice(0, 60), amount, source } : { kind: "invalid", reason: "pay_debt" };
+}
+
+function parseExpense(rest: string): BotCommand {
+  const { source, words } = splitSource(rest);
   // Số tiền: thử cụm 2 từ trước ("150 k", "2 triệu"), rồi 1 từ.
   let amount: number | null = null;
   for (let i = 0; i < words.length && amount === null; i++) {

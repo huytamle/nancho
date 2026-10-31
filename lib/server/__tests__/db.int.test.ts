@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { seedIngredients, seedPickupPoints, seedProducts, seedRecipes, seedZones } from "@/data/seed";
+import { seedFormulas, seedStockIngredients } from "@/data/seed-stock";
 import { vnInstant, type ISODate } from "@/lib/domain/time";
 import { closeDb, getDb } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
@@ -25,7 +26,7 @@ describe("migration", () => {
     const tables = await db.execute<{ relname: string; relrowsecurity: boolean }>(
       sql`SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'`,
     );
-    expect(tables.length).toBe(35);
+    expect(tables.length).toBe(40);
     expect(tables.filter((r) => !r.relrowsecurity)).toEqual([]);
     const policies = await db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'public'`);
     expect(policies.length).toBe(0);
@@ -36,7 +37,8 @@ describe("seed", () => {
   it("nạp đủ Phụ lục A", async () => {
     const count = async (table: Parameters<typeof db.$count>[0]) => db.$count(table);
     expect(await count(t.products)).toBe(seedProducts.length);
-    expect(await count(t.ingredients)).toBe(seedIngredients.length);
+    expect(await count(t.ingredients)).toBe(seedIngredients.length + seedStockIngredients.length);
+    expect(await count(t.productionFormulas)).toBe(seedFormulas.length);
     expect(await count(t.recipeLines)).toBe(seedRecipes.length);
     expect(await count(t.zones)).toBe(seedZones.length);
     expect(await count(t.pickupPoints)).toBe(seedPickupPoints.length);

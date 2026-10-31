@@ -20,7 +20,12 @@ export async function resetOrders() {
   await s`DELETE FROM orders`;
   await s`DELETE FROM customers`;
   await s`DELETE FROM rate_limits`;
+  await s`DELETE FROM stock_moves`;
+  await s`DELETE FROM stock_counts`;
+  await s`DELETE FROM supplier_bills`;
+  await s`UPDATE ingredients SET avg_cost = 0`;
   await s`DELETE FROM expenses`;
+  await s`DELETE FROM suppliers`;
   await s`DELETE FROM cash_entries`;
   await s`DELETE FROM shifts`;
   await s`DELETE FROM ops_files`;
@@ -158,4 +163,18 @@ export async function feedbackRows() {
 
 export async function refundRows() {
   return db()<{ amount: number; memo: string | null }[]>`SELECT amount, memo FROM payments WHERE provider = 'refund' ORDER BY id`;
+}
+
+// ── Kho (M10) ──
+
+/** Tồn đầu: một dòng `adjust` cho mỗi nguyên liệu. */
+export async function seedStock(rows: Record<string, number>) {
+  for (const [id, qty] of Object.entries(rows)) {
+    await db()`INSERT INTO stock_moves (ingredient_id, qty, kind, ref_type, ref_id) VALUES (${id}, ${qty}, 'adjust', 'manual', 'e2e')`;
+  }
+}
+
+export async function onHand(id: string) {
+  const [row] = await db()<{ qty: string | null }[]>`SELECT sum(qty)::text AS qty FROM stock_moves WHERE ingredient_id = ${id}`;
+  return Number(row?.qty ?? 0);
 }

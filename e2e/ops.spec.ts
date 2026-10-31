@@ -31,7 +31,7 @@ test.afterAll(closeDb);
 
 test("pha chế: vào thẳng Vận hành, mở ca → đóng ca kèm ảnh Sapo; số đáng có chỉ hiện sau khi đếm", async ({ page }) => {
   await login(page, STAFF.barista, /\/admin\/van-hanh$/);
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Sổ tay", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Kho", "Sổ tay", "Nhân viên"]);
   await expect(page.getByRole("link", { name: "Bếp" })).toHaveCount(0);
 
   await page.getByRole("textbox", { name: "Số tờ 500.000" }).first().fill("2");
