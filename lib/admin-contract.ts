@@ -30,6 +30,8 @@ export type AdminError =
   | "period_open"
   | "missing_rate"
   | "below_min"
+  // Ngày bán (§18)
+  | "refund_required"
   | "server_error";
 
 export type AdminResult<T = object> = ({ ok: true } & T) | { ok: false; reason: AdminError };

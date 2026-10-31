@@ -5,6 +5,7 @@ import { addDays, vnDateOf, vnInstant, vnWeekday, type ISODate } from "@/lib/dom
 import type { ServiceDay } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import { batches, serviceDays, slotTemplates } from "@/lib/server/db/schema";
+import { releaseExpiredHolds } from "@/lib/server/dal/holds";
 import { loadSettings } from "@/lib/server/dal/settings";
 
 // Lịch lò (§3.1, §7.2). Mẻ được sinh từ slot_templates; giờ luôn đổi qua vnInstant (giờ VN).
@@ -73,8 +74,9 @@ export async function getOvenStatus(now: Date, db: Executor = getDb()): Promise<
   return (await getOvenSnapshot(now, db)).status;
 }
 
-/** Dữ liệu cho Oven Bar + chọn mẻ phía client (`GET /api/oven`, §8.2). */
+/** Dữ liệu cho Oven Bar + chọn mẻ phía client (`GET /api/oven`, §8.2). Trả suất của đơn hết giờ giữ trước (§18.2). */
 export async function getOvenSnapshot(now: Date, db: Executor = getDb()): Promise<OvenSnapshot> {
+  await releaseExpiredHolds(now, db);
   const { ordering, shipping } = await loadSettings(db);
   const today = vnDateOf(now);
   const days = await loadServiceDays(today, addDays(today, ordering.daysAhead), db);

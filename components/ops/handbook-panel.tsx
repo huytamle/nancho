@@ -108,6 +108,7 @@ function PageView({ view, page, now }: { view: HandbookView; page: HandbookPageV
                   ))}
                 </tbody>
               </table>
+              {page.recipe.taste ? <Taste taste={page.recipe.taste} /> : null}
             </div>
           ) : null}
           <p className="mt-6 text-xs text-secondary">{t.confidential}</p>
@@ -122,5 +123,17 @@ function PageView({ view, page, now }: { view: HandbookView; page: HandbookPageV
         </section>
       ) : null}
     </div>
+  );
+}
+
+/** Điểm khẩu vị 4 tuần của món (§18.5): trung bình 1–3, số lượt 😕 và chip hay gặp. */
+function Taste({ taste }: { taste: NonNullable<NonNullable<HandbookPageView["recipe"]>["taste"]> }) {
+  return (
+    <p className="mt-4 rounded-2xl bg-elevated p-3 text-[15px]">
+      <span className="font-semibold">{t.taste}</span>{" "}
+      {taste.count === 0
+        ? t.tasteNone
+        : t.tasteLine(String(taste.average).replace(".", ","), taste.count, taste.unhappy, taste.tags.map((x) => `${x.tag} ×${x.n}`).join(", "))}
+    </p>
   );
 }

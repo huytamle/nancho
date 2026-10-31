@@ -6,6 +6,7 @@ import { getDb, type Db } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { fail, logEvent, type OpsActor, type OpsCtx, type OpsFail } from "@/lib/server/dal/ops";
 import { renderMarkdown } from "@/lib/server/markdown";
+import { productFeedback, type ProductFeedback } from "@/lib/server/dal/feedback";
 
 // Sổ tay (§17.6): quy trình & công thức. Trang chỉ trả cho vai trò được gắn (owner/manager luôn xem) —
 // ràng buộc nằm ở DTO này, không phải ẩn trên UI. Mỗi lượt mở trang ghi `ops_events` (handbook_view).
@@ -23,7 +24,7 @@ export type HandbookPageView = {
   /** Markdown gốc — chỉ cho người sửa. */
   body: string | null;
   productId: string | null;
-  recipe: { product: string; lines: RecipeLineView[] } | null;
+  recipe: { product: string; lines: RecipeLineView[]; /** Điểm khẩu vị 4 tuần (§18.5) — chỉ owner/manager. */ taste: ProductFeedback | null } | null;
   version: number;
   updatedBy: string | null;
   updatedAt: string;
@@ -55,7 +56,7 @@ export async function loadHandbookView(viewer: OpsActor, slug: string | null, no
         .innerJoin(t.ingredients, eq(t.ingredients.id, t.recipeLines.ingredientId))
         .where(eq(t.recipeLines.productId, row.productId))
         .orderBy(asc(t.ingredients.sort));
-      recipe = { product: product?.name ?? row.productId, lines };
+      recipe = { product: product?.name ?? row.productId, lines, taste: canEdit ? await productFeedback(row.productId, now, db) : null };
     }
     const [editor] = row.updatedBy ? await db.select({ name: t.staff.name }).from(t.staff).where(eq(t.staff.id, row.updatedBy)) : [];
     page = {

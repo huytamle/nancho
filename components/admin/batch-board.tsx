@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { advanceBatch, advanceOrders } from "@/app/actions/admin";
+import { BoxCard, HoldBadge } from "@/components/admin/box-card";
 import { ItemsList, NoteLine, StatusPill } from "@/components/admin/order-bits";
 import { telHref, useAdminAction, useKitchen } from "@/components/admin/use-admin";
 import { copy } from "@/data/copy";
@@ -15,6 +17,8 @@ export function BatchBoard() {
   const { day, openOrder } = useKitchen();
   const { pending, run } = useAdminAction();
   const nowMs = Date.parse(day.serverNow);
+  // Thẻ nắp hộp (§18.3): mặc định hiện cho mẻ đang trong lò / đã ra lò (đang đóng gói); mẻ khác bấm để xem.
+  const [boxes, setBoxes] = useState<Record<number, boolean>>({});
 
   if (day.batches.length === 0) return <p className="py-10 text-center text-secondary">{copy.admin.noDay}</p>;
 
@@ -26,6 +30,7 @@ export function BatchBoard() {
         const confirmed = orders.filter((o) => o.status === "confirmed").length;
         const baking = orders.filter((o) => o.status === "baking").length;
         const ovenMs = Date.parse(b.ovenAt) - nowMs;
+        const showBoxes = boxes[b.id] ?? (b.status === "baking" || b.status === "done");
         return (
           <section key={b.id} id={`me-${b.id}`} aria-labelledby={`me-h-${b.id}`} className="scroll-mt-28 rounded-tile bg-surface p-5">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -41,6 +46,18 @@ export function BatchBoard() {
               {prep ? batchMains(prep) : null} · {t.load(b.usedPan, b.capPan, b.usedBbq, b.capBbq)}
             </p>
 
+            {orders.length > 0 ? (
+              <button
+                type="button"
+                aria-pressed={showBoxes}
+                onClick={() => setBoxes((m) => ({ ...m, [b.id]: !showBoxes }))}
+                className="mt-3 min-h-11 rounded-full bg-elevated px-4 text-sm font-semibold"
+              >
+                ✍️ {showBoxes ? copy.admin.box.hide : copy.admin.box.show}
+              </button>
+            ) : null}
+            {showBoxes && orders.length > 0 ? <p className="mt-2 text-xs text-secondary">{copy.admin.box.legend}</p> : null}
+
             {orders.length === 0 ? (
               <p className="mt-4 text-secondary">{t.empty}</p>
             ) : (
@@ -53,6 +70,7 @@ export function BatchBoard() {
                         <span className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold">{o.customerName}</span>
                           <StatusPill status={o.status} />
+                          {o.holdUntil ? <HoldBadge until={o.holdUntil} /> : null}
                         </span>
                         <span className="mt-1 block">
                           <ItemsList items={o.items} />
@@ -60,6 +78,11 @@ export function BatchBoard() {
                       </span>
                     </button>
                     <NoteLine note={o.note} />
+                    {showBoxes ? (
+                      <div className="mt-2">
+                        <BoxCard order={o} readyLabel={b.readyLabel} />
+                      </div>
+                    ) : null}
                     {o.status === "placed" ? (
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <a href={telHref(o.customerPhone)} className="flex min-h-14 items-center justify-center rounded-full bg-accent font-semibold text-on-accent">

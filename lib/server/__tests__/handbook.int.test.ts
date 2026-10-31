@@ -224,7 +224,9 @@ describe("sổ tay — quyền xem (DTO)", () => {
         { label: "Gừng hồng muối", qty: 1, unit: "phần" },
         { label: "Hộp pizza", qty: 1, unit: "hộp" },
       ],
+      taste: null, // điểm khẩu vị (§18.5) chỉ cho owner/manager
     });
+    expect((await loadHandbookView(manager, "pepperoni-pan", at("09:30"))).page!.recipe!.taste).toEqual({ average: null, count: 0, unhappy: 0, tags: [] });
     expect(v.page!.html).toContain("<ol>");
     const [ev] = await db.select().from(t.opsEvents).where(and(eq(t.opsEvents.type, "handbook_view"), eq(t.opsEvents.actor, `staff:${kitchen.id}`)));
     expect(ev.data).toEqual({ slug: "pepperoni-pan", version: 1 });

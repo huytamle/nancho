@@ -20,7 +20,9 @@ import {
   staffByTelegram,
   type OpsActor,
 } from "@/lib/server/dal/ops";
+import { pauseOvenCore, resumeOvenCore, SALE_DAY_ROLES } from "@/lib/server/dal/sale-day";
 import type { TelegramApi } from "@/lib/server/notify/telegram";
+import { hasRole } from "@/lib/domain/roles";
 
 // Bot vận hành (§17.4). Privacy mode BẬT → trong nhóm bot chỉ nhận lệnh `/…`, tin trả lời chính bot và nút bấm.
 // Idempotent theo update_id. Chỉ nhận nhóm đã cấu hình (TELEGRAM_CHAT_ID / TELEGRAM_OPS_CHAT_ID) và chat riêng.
@@ -134,6 +136,21 @@ async function onMessage(msg: z.infer<typeof Message>, db: Db, deps: BotDeps): P
     const fileId = await storePhoto(photo, actor, db, deps);
     const res = await attachExpensePhotoCore(e.id, { fileId, telegramFileId: photo }, { actor, now: deps.now, db });
     await reply(res.ok ? `📎 Đã gắn ảnh vào ${expenseCode(e.id)}.` : err[res.reason]);
+    return "handled";
+  }
+
+  // Khoá/mở lò (§18.1): chỉ người đã liên kết có vai owner/manager/kitchen — người khác bỏ qua im lặng.
+  if (cmd.kind === "pause" || cmd.kind === "resume") {
+    const who = await staffByTelegram(from.id, db);
+    if (!who || !hasRole(who.roles, SALE_DAY_ROLES)) return "ignored";
+    const ctx = { actor: who, now: deps.now, db };
+    if (cmd.kind === "pause") {
+      const res = await pauseOvenCore({ reason: cmd.reason, tomorrow: false }, ctx);
+      await reply(res.ok ? res.telegram : copy.admin.lock.noDay);
+    } else {
+      const res = await resumeOvenCore(ctx);
+      await reply(res.ok && res.telegram ? res.telegram : "Lò đang mở — không có gì để mở lại.");
+    }
     return "handled";
   }
 

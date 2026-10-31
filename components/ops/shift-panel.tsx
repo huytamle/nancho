@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { checkPetty, closeShift, dropCash, openShift, replenishPetty, saveOpsSettings } from "@/app/actions/ops";
+import { OvenLock } from "@/components/admin/oven-lock";
 import { useAdminAction } from "@/components/admin/use-admin";
 import { CashCounter } from "@/components/ops/cash-counter";
 import { MoneyInput, PlainMoneyInput } from "@/components/ops/money-input";
@@ -15,6 +16,7 @@ import { formatPrice } from "@/lib/format";
 import { varianceText } from "@/lib/ops-text";
 import type { WorkView } from "@/lib/server/dal/checklist";
 import type { OpsView, ShiftView } from "@/lib/server/dal/ops";
+import type { OvenLockView } from "@/lib/server/dal/sale-day";
 
 const t = opsCopy;
 
@@ -32,11 +34,12 @@ function CountResult({ r, tolerance }: { r: Count; tolerance: number }) {
   );
 }
 
-export function ShiftPanel({ view, work }: { view: OpsView; work: WorkView }) {
+export function ShiftPanel({ view, work, lock }: { view: OpsView; work: WorkView; lock: OvenLockView | null }) {
   // Kết quả đếm giữ ở đây: mở/đóng ca xong thì form tương ứng biến mất (refresh), kết quả vẫn phải còn.
   const [result, setResult] = useState<Count | null>(null);
   return (
     <div className="space-y-5">
+      {lock ? <OvenLock lock={lock} /> : null}
       {result ? <CountResult r={result} tolerance={view.settings.cashTolerance} /> : null}
       {view.openShift ? (
         <CloseShift

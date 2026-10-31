@@ -37,9 +37,10 @@ export async function resetOrders() {
   await s`DELETE FROM shift_plans`;
   await s`DELETE FROM holidays`;
   await s`DELETE FROM settings WHERE key = 'payroll'`;
+  await s`DELETE FROM cash_handovers`;
   await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
-  await s`UPDATE service_days SET order_seq = 0, status = 'open'`;
+  await s`UPDATE service_days SET order_seq = 0, status = 'open', pause_message = NULL`;
 }
 
 /** Đặt số khay đã dùng của mẻ `hhmm` hôm 06/11 (giờ VN). */
@@ -131,4 +132,30 @@ export async function linkTelegram(name: string, telegramUserId: number) {
 export async function expenseRows() {
   return db()<{ amount: number; description: string; source: string; status: string; category: string }[]>`
     SELECT amount, description, source, status, category FROM expenses ORDER BY id`;
+}
+
+// ── Gói "Ngày bán" (M9.5) ──
+
+/** Khách từng bom hàng → bắt buộc chuyển khoản trước (đơn có hạn giữ suất 15′). */
+export async function seedRiskyCustomer(phone: string, name = "Khách cũ") {
+  await db()`INSERT INTO customers (phone, name, order_count, completed_count, no_show_count) VALUES (${phone}, ${name}, 3, 2, 1)`;
+}
+
+/** Đánh dấu đơn hoàn tất (để khách chấm điểm) và trả token theo dõi. */
+export async function completeOrder(code: string) {
+  const [row] = await db()<{ tracking_token: string }[]>`UPDATE orders SET status = 'completed' WHERE code = ${code} RETURNING tracking_token`;
+  return row.tracking_token;
+}
+
+export async function dayStatus(date = "2026-11-06") {
+  const [row] = await db()<{ status: string; pause_message: string | null }[]>`SELECT status, pause_message FROM service_days WHERE date = ${date}`;
+  return row ?? null;
+}
+
+export async function feedbackRows() {
+  return db()<{ ratings: Record<string, number>; tags: Record<string, string[]>; comment: string | null }[]>`SELECT ratings, tags, comment FROM feedback ORDER BY id`;
+}
+
+export async function refundRows() {
+  return db()<{ amount: number; memo: string | null }[]>`SELECT amount, memo FROM payments WHERE provider = 'refund' ORDER BY id`;
 }

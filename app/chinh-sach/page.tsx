@@ -95,6 +95,10 @@ export default function PolicyPage() {
                 Mô tả nhà và vị trí trên đơn được <strong>tự động xoá sau {ORDER_ADDRESS_RETENTION_DAYS} ngày</strong>. Nếu bạn bật &quot;Ghi nhớ thông tin&quot;, địa chỉ được giữ để lần sau đặt nhanh — đến khi bạn yêu cầu xoá.
               </li>
               <li>Thông báo đơn mới được gửi vào nhóm Telegram nội bộ của bếp (tên, số điện thoại, khu vực, món).</li>
+              <li>
+                <strong>Góp ý khẩu vị</strong> (tuỳ chọn, sau khi nhận món): điểm 😋/🙂/😕 và góp ý bạn gõ được lưu cùng đơn để bếp chỉnh công thức, gửi vào nhóm bếp không kèm số điện thoại.
+                Lời góp ý được xoá cùng thời hạn {ORDER_ADDRESS_RETENTION_DAYS} ngày như địa chỉ; điểm chỉ dùng cho thống kê.
+              </li>
             </ul>
           </Section>
 

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { advanceOrders, getOrderEvents, markPaid, moveOrder, updateNote } from "@/app/actions/admin";
+import { BoxCard, HoldBadge } from "@/components/admin/box-card";
 import { ItemsList, StatusPill } from "@/components/admin/order-bits";
 import { copyText, mapsHref, telHref, useAdminAction, useKitchen, zaloHref } from "@/components/admin/use-admin";
 import { Sheet } from "@/components/ui/sheet";
@@ -66,6 +67,7 @@ function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void 
         <span className="tabular-nums">{o.code}</span>
         <span>· {copy.admin.orders.batchOption(batch?.readyLabel ?? "")}</span>
         <span>· {copy.admin.channel[o.channel]}</span>
+        {o.holdUntil ? <HoldBadge until={o.holdUntil} /> : null}
       </div>
 
       {next.length > 0 ? (
@@ -115,6 +117,8 @@ function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void 
         </div>
       </section>
 
+      {o.status !== "cancelled" ? <BoxCard order={o} readyLabel={batch?.readyLabel ?? ""} /> : null}
+
       <section className={box} aria-labelledby="d-items">
         <h3 id="d-items" className="mb-2 text-sm font-semibold text-secondary">
           {t.items}
@@ -126,7 +130,11 @@ function Detail({ order: o, onDone }: { order: KitchenOrder; onDone: () => void 
         </p>
         <p className="mt-1 text-sm text-secondary">
           {t.payment}: {o.paymentMethod === "cod" ? t.cod : t.transfer} ·{" "}
-          {o.paymentStatus === "paid" ? copy.admin.orders.paid : copy.admin.orders.collect(formatPrice(o.collect))}
+          {o.paymentStatus === "paid"
+            ? copy.admin.orders.paid
+            : o.paymentStatus === "refunded"
+              ? copy.admin.lock.refunded
+              : copy.admin.orders.collect(formatPrice(o.collect))}
         </p>
         {role === "owner" && o.paymentStatus === "unpaid" && o.status !== "cancelled" ? (
           <div className="mt-3">

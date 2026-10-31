@@ -30,7 +30,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| **M9.5 — Gói "Ngày bán"** | 📝 đặc tả Blueprint §18 (chủ quán duyệt 31/10/2026); **milestone kế tiếp**, làm song song chuẩn bị ra mắt | — |
+| **M9.5 — Gói "Ngày bán"** | ✅ trên nhánh (31/10/2026) — chờ chủ quán bảo đưa lên `main` | xem `git log` |
 | M10–M11 (kho + công nợ NCC + biên lợi nhuận; chỉ số + trợ thủ Telegram) | 📝 Blueprint §15, §17.8, §17.10 (đã bổ sung 31/10/2026) | — |
 | Giai đoạn 3 — ca linh hoạt (đăng ký/đổi ca, xin nghỉ) | 📝 khi ≥ 4 nhân viên (§15) | — |
 
@@ -239,6 +239,22 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - `releaseExpiredHolds` phải trả suất qua đúng logic huỷ hiện có (`releasesCapacity`) để không trả hai lần.
 - Người bấm "Đã giao" nằm ở `order_events.actor = "staff:<id>"` — dùng cho bàn giao COD theo shipper.
 
+## M9.5 — đã làm
+
+- **Bảng** (migration `0005_sale_day`): `orders.hold_until` (+ index một phần cho đơn đang giữ), `cash_handovers`, `feedback`. `payments.provider` thêm `'refund'` (cột text — không đổi enum), `order_events.type` thêm `'refunded'`. `settings.payment.holdMinutes` (mặc định 15, chưa có UI sửa).
+- **Domain** `hold.ts`, `box-code.ts`, `oven-lock.ts`, `feedback.ts` — 100% dòng (test `lib/domain/__tests__/sale-day.test.ts`). Lệnh bot `/khoalo [lý do]`, `/molo` trong `parseBotCommand`.
+- **DAL** `dal/holds.ts` (`releaseExpiredHolds` — một câu CTE, xem Blueprint M9.5), `dal/sale-day.ts` (khoá/mở lò, huỷ + ghi hoàn, bàn giao COD), `dal/feedback.ts`. `advanceOrdersCore` tách thân thành `advanceOrdersInTx` để huỷ + ghi hoàn trong cùng transaction. Webhook SePay xử lý tiền đến sau khi hết giữ suất.
+- **Action** `app/actions/sale-day.ts` (khung `runOps`; quyền owner/manager/kitchen kiểm ở DAL), `app/actions/feedback.ts` (công khai, rate-limit 10/10′/IP + 5/giờ/đơn).
+- **UI**: `components/admin/oven-lock.tsx`, `box-card.tsx` (+ `HoldBadge`), `handover-panel.tsx`; `components/store/hold-countdown.tsx`, `feedback-form.tsx`. Sổ tay → trang công thức hiện điểm khẩu vị 4 tuần (owner/manager). `/chinh-sach` thêm mục góp ý.
+- **Test:** unit 202 · int 109 (`sale-day.int.test.ts` 13: giữ suất 15′ chỉ đơn bắt buộc trả trước, hết hạn song song 6 request trả suất một lần, placeOrder/Oven Bar tự trả suất, CK muộn còn chỗ/hết chỗ, khoá lò → `paused`, quyền, huỷ đơn đã trả bắt ghi hoàn, `/khoalo` người lạ/shipper/barista bị bỏ qua, bàn giao song song → `duplicate`, lệch ⚠/ℹ, thẻ nắp hộp, chấm điểm 7 ngày/24 giờ/combo) · e2e 111/111 (`e2e/m95.spec.ts`: khoá lò → `/` tạm ngưng + huỷ/ghi hoàn + mở lò; đếm ngược ở màn thành công/trang đơn/bếp; thẻ nắp hộp `T…`/`CK`/`R`; khách chấm điểm).
+- **Quyết định nhỏ (ghi lại):** chữ tắt add-on lấy từ **tên** (`products.short` là mô tả); hai loại sốt cùng ra `S` như ví dụ `+2S`. Shipper bàn giao = actor của sự kiện → `completed` (chỉ đơn giao, COD/CK chưa về). Đơn giữ suất không tự xác nhận dù khách quen (đợi tiền). `/khoalo` chỉ khoá hôm nay (khoá cả mai: dùng nút trong app).
+
+## M9.5 — việc của chủ quán để bật
+
+1. `npm run db:migrate` (migration `0005_sale_day`). Không có env mới.
+2. Thử `/khoalo thử` rồi `/molo` trong nhóm Telegram (cần đã liên kết Telegram, vai owner/manager/bếp).
+3. Mua bút lông dầu cho quầy đóng gói; dán chú thích mã (T = thu · CK · +2S · R) cạnh chỗ đóng hộp.
+
 ## M10 — lưu ý từ M9
 
 - Chỉ số §17.10 "doanh thu/giờ công", "chi phí nhân sự %": giờ công lấy `timesheets.minutes` (đã gửi) hoặc `computeTimesheet` (nháp); tiền lương = `payslips.total` — **chỉ owner** (`loadPayrollView` trả null cho người khác; giữ nguyên nguyên tắc ở DTO).
@@ -246,6 +262,9 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Chủ quán cần: nhập đơn giá giờ cho từng người (tab Lương) trước ngày 1 tháng sau; nhập ngày lễ (Tết âm lịch!); vào quán bấm [Đây là Wi-Fi quán]; xếp lịch ca tuần để có đi muộn/`late_out`.
 
 ## Bẫy môi trường đã gặp
+
+- `drizzle-kit migrate` đọc `DIRECT_URL` (không phải `DATABASE_URL`) và tự nạp `.env.local` (đang để trống) → migrate DB local phải truyền `DIRECT_URL=postgres://postgres:postgres@localhost:5433/heat`.
+- `seedAppendixB` (e2e) chèn món phẳng, add-on **không** gắn `parent_item_id` → logic nào cần "add-on" phải xét theo `products.kind`, đừng theo món cha.
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
 

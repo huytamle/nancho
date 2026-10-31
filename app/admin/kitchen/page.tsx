@@ -5,6 +5,7 @@ import { isISODate, vnDateOf } from "@/lib/domain/time";
 import { requireKitchenStaff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
 import { loadKitchenDay } from "@/lib/server/dal/kitchen";
+import { loadOvenLock } from "@/lib/server/dal/sale-day";
 
 // Kitchen Dashboard (§10): một màn hình, 5 tab; `?ngay=YYYY-MM-DD&tab=…` (link trong tin Telegram dùng đúng dạng này).
 // Động hoàn toàn, không cache dữ liệu admin (§5.3); phiên đọc trong <Suspense>.
@@ -25,10 +26,12 @@ async function Kitchen({ searchParams }: Pick<PageProps<"/admin/kitchen">, "sear
   const ngay = one(sp.ngay);
   const tab = one(sp.tab);
   const date = ngay && isISODate(ngay) ? ngay : vnDateOf(now);
-  const day = await loadKitchenDay(date, now);
+  // Khoá lò (§18.1) luôn nói về hôm nay, bất kể ngày đang xem; shipper không thấy.
+  const [day, lock] = await Promise.all([loadKitchenDay(date, now), staff.role === "shipper" ? null : loadOvenLock(now)]);
   return (
     <KitchenDashboard
       day={day}
+      lock={lock}
       staff={{ name: staff.name, role: staff.role, orderRoles: staff.orderRoles }}
       initialTab={tab && tab in copy.admin.tabs ? (tab as KitchenTab) : "chuan-bi"}
     />

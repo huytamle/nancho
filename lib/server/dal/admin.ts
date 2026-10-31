@@ -25,62 +25,70 @@ export type AdvanceResult = { updated: string[]; skipped: Skip[] };
  */
 export async function advanceOrdersCore(ids: string[], to: OrderStatus, ctx: Ctx & { reason?: string }): Promise<AdvanceResult> {
   const db = ctx.db ?? getDb();
+  return db.transaction((tx) => advanceOrdersInTx(tx, ids, to, ctx));
+}
+
+/** Thân của advanceOrdersCore — gọi được trong transaction khác (huỷ + ghi hoàn tiền, §18.1). */
+export async function advanceOrdersInTx(
+  tx: Executor,
+  ids: string[],
+  to: OrderStatus,
+  ctx: Omit<Ctx, "db"> & { reason?: string },
+): Promise<AdvanceResult> {
   const reason = ctx.reason?.trim() || undefined;
-  return db.transaction(async (tx) => {
-    const rows = await tx
-      .select({ order: t.orders, cutoffAt: t.batches.cutoffAt })
-      .from(t.orders)
-      .innerJoin(t.batches, eq(t.batches.id, t.orders.batchId))
-      .where(inArray(t.orders.id, ids))
-      .orderBy(t.orders.id) // khoá theo thứ tự cố định → hai lô chồng nhau không deadlock
-      .for("update", { of: t.orders });
+  const rows = await tx
+    .select({ order: t.orders, cutoffAt: t.batches.cutoffAt })
+    .from(t.orders)
+    .innerJoin(t.batches, eq(t.batches.id, t.orders.batchId))
+    .where(inArray(t.orders.id, ids))
+    .orderBy(t.orders.id) // khoá theo thứ tự cố định → hai lô chồng nhau không deadlock
+    .for("update", { of: t.orders });
 
-    const result: AdvanceResult = { updated: [], skipped: [] };
-    const found = new Set(rows.map((r) => r.order.id));
-    for (const id of ids) if (!found.has(id)) result.skipped.push({ id, reason: "not_found" });
+  const result: AdvanceResult = { updated: [], skipped: [] };
+  const found = new Set(rows.map((r) => r.order.id));
+  for (const id of ids) if (!found.has(id)) result.skipped.push({ id, reason: "not_found" });
 
-    for (const { order: o, cutoffAt } of rows) {
-      const check = canTransitionAs(ctx.actor.roles, o.status, to, {
-        fulfillment: o.fulfillment,
-        now: ctx.now,
-        cutoffAt,
-        reason,
-      });
-      if (!check.ok) {
-        result.skipped.push({ id: o.id, reason: check.reason });
-        continue;
-      }
-      await tx
-        .update(t.orders)
-        .set({ status: to, updatedAt: ctx.now, ...(to === "cancelled" ? { cancelReason: reason ?? null } : {}) })
-        .where(eq(t.orders.id, o.id));
-      if (releasesCapacity(o.status, to)) {
-        await tx
-          .update(t.batches)
-          .set({ usedPan: sql`${t.batches.usedPan} - ${o.panUnits}`, usedBbq: sql`${t.batches.usedBbq} - ${o.bbqUnits}` })
-          .where(eq(t.batches.id, o.batchId));
-      }
-      if (to === "completed" || to === "no_show") {
-        await tx
-          .update(t.customers)
-          .set(
-            to === "completed"
-              ? { completedCount: sql`${t.customers.completedCount} + 1` }
-              : { noShowCount: sql`${t.customers.noShowCount} + 1` },
-          )
-          .where(eq(t.customers.id, o.customerId));
-      }
-      await tx.insert(t.orderEvents).values({
-        orderId: o.id,
-        type: to === "cancelled" ? "cancelled" : "status_changed",
-        actor: tag(ctx.actor),
-        data: { from: o.status, to, ...(reason ? { reason } : {}) },
-        createdAt: ctx.now,
-      });
-      result.updated.push(o.id);
+  for (const { order: o, cutoffAt } of rows) {
+    const check = canTransitionAs(ctx.actor.roles, o.status, to, {
+      fulfillment: o.fulfillment,
+      now: ctx.now,
+      cutoffAt,
+      reason,
+    });
+    if (!check.ok) {
+      result.skipped.push({ id: o.id, reason: check.reason });
+      continue;
     }
-    return result;
-  });
+    await tx
+      .update(t.orders)
+      .set({ status: to, updatedAt: ctx.now, ...(to === "cancelled" ? { cancelReason: reason ?? null } : {}) })
+      .where(eq(t.orders.id, o.id));
+    if (releasesCapacity(o.status, to)) {
+      await tx
+        .update(t.batches)
+        .set({ usedPan: sql`${t.batches.usedPan} - ${o.panUnits}`, usedBbq: sql`${t.batches.usedBbq} - ${o.bbqUnits}` })
+        .where(eq(t.batches.id, o.batchId));
+    }
+    if (to === "completed" || to === "no_show") {
+      await tx
+        .update(t.customers)
+        .set(
+          to === "completed"
+            ? { completedCount: sql`${t.customers.completedCount} + 1` }
+            : { noShowCount: sql`${t.customers.noShowCount} + 1` },
+        )
+        .where(eq(t.customers.id, o.customerId));
+    }
+    await tx.insert(t.orderEvents).values({
+      orderId: o.id,
+      type: to === "cancelled" ? "cancelled" : "status_changed",
+      actor: tag(ctx.actor),
+      data: { from: o.status, to, ...(reason ? { reason } : {}) },
+      createdAt: ctx.now,
+    });
+    result.updated.push(o.id);
+  }
+  return result;
 }
 
 /** [Đút lò] confirmed → baking, [Ra lò] baking → ready cho cả mẻ (§10.3). Đơn còn `placed` không vào lò. */

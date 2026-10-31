@@ -4,6 +4,9 @@ import { randomBytes } from "node:crypto";
 import { site } from "@/data/site";
 import { fits, requirementOf, type Requirement } from "@/lib/domain/capacity";
 import { orderCode, transferMemo } from "@/lib/domain/order-code";
+import { canEditFeedback, canRate, ratableItems, type RatableItem, type Score } from "@/lib/domain/feedback";
+import { pauseCancelOf } from "@/lib/domain/oven-lock";
+import { HOLD_EXPIRED_REASON, holdUntil as holdDeadline, isHeld, needsHold } from "@/lib/domain/hold";
 import { canTransition, customerStage, releasesCapacity, shouldAutoConfirm, type CustomerStage } from "@/lib/domain/order-status";
 import { priceOrder, requiresPrepay, type CartLine, type PricedItem } from "@/lib/domain/pricing";
 import { vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
@@ -14,6 +17,7 @@ import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import type { Catalog } from "@/lib/server/dal/catalog";
 import { findCustomerByPhone, resolveSavedAddress } from "@/lib/server/dal/customers";
+import { releaseExpiredHolds } from "@/lib/server/dal/holds";
 import { getOvenSnapshot } from "@/lib/server/dal/schedule";
 import { loadSettings } from "@/lib/server/dal/settings";
 import { transferFor } from "@/lib/server/payments/vietqr";
@@ -50,7 +54,7 @@ function pgCode(err: unknown): string | undefined {
 
 /** DTO trả cho khách — dùng chung cho đơn vừa tạo và lần gửi lại cùng `idempotencyKey`. */
 function successOf(
-  o: Pick<t.Order, "code" | "seq" | "trackingToken" | "serviceDate" | "total" | "status" | "paymentMethod" | "fulfillment">,
+  o: Pick<t.Order, "code" | "seq" | "trackingToken" | "serviceDate" | "total" | "status" | "paymentMethod" | "fulfillment" | "holdUntil">,
   b: Pick<t.BatchRow, "readyAt" | "cutoffAt">,
   ctx: { now: Date; deliveryWindowMin: number; pointName: string | null },
 ): Success {
@@ -67,6 +71,7 @@ function successOf(
     cutoffLabel: vnTimeLabel(b.cutoffAt),
     total: o.total,
     status: o.status === "confirmed" ? "confirmed" : "placed",
+    holdUntil: o.holdUntil?.toISOString() ?? null,
     payment:
       o.paymentMethod === "cod"
         ? { method: "cod" }
@@ -157,9 +162,12 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
   const { staff } = ctx;
   const existing = await findCustomerByPhone(phone, db);
   if (existing?.isBlocked && !staff) return { result: { ok: false, reason: "contact_us" } };
-  if (!staff && input.paymentMethod === "cod" && requiresPrepay(payment, existing, priced.total)) {
+  const prepayRequired = requiresPrepay(payment, existing, priced.total);
+  if (!staff && input.paymentMethod === "cod" && prepayRequired) {
     return { result: { ok: false, reason: "prepay_required" } };
   }
+  // Bắt buộc trả trước → giữ suất có hạn (§18.2); đơn chờ CK không tự xác nhận dù là khách quen.
+  const hold = needsHold({ paymentMethod: input.paymentMethod, prepayRequired, byStaff: !!staff });
 
   // Địa chỉ: khách gõ mới, hoặc "dùng địa chỉ lần trước" qua token ký (server tự tra mô tả nhà thật).
   let address: { addressText: string; lat: number | null; lng: number | null } | null = null;
@@ -176,6 +184,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
 
   try {
     const created = await db.transaction(async (tx) => {
+      await releaseExpiredHolds(now, tx); // suất của đơn quá hạn về lại mẻ trước khi giữ suất mới
       const [batch] = await tx
         .update(t.batches)
         .set({ usedPan: sql`${t.batches.usedPan} + ${req.pan}`, usedBbq: sql`${t.batches.usedBbq} + ${req.bbq}` })
@@ -215,7 +224,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
 
       if (input.customer.remember && zone && address) await rememberAddress(tx, customer.id, zone.id, address, now);
 
-      const status: OrderStatus = staff || shouldAutoConfirm({ ...customer, paid: false }) ? "confirmed" : "placed";
+      const status: OrderStatus = staff || (!hold && shouldAutoConfirm({ ...customer, paid: false })) ? "confirmed" : "placed";
       const [order] = await tx
         .insert(t.orders)
         .values({
@@ -245,6 +254,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
           source: staff ? null : (ctx.source ?? null),
           trackingToken: trackingToken(),
           idempotencyKey: input.idempotencyKey,
+          holdUntil: hold ? holdDeadline(now, payment.holdMinutes) : null,
           createdAt: now,
         })
         .returning();
@@ -294,6 +304,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
         total: order.total,
         paymentMethod: order.paymentMethod,
         needsConfirm: order.status === "placed",
+        holdUntil: order.holdUntil ? vnTimeLabel(order.holdUntil) : null,
         note: order.note,
         link: `${process.env.NEXT_PUBLIC_SITE_URL ?? site.url}/admin/kitchen?ngay=${order.serviceDate}&tab=don`,
       }),
@@ -451,10 +462,26 @@ export type OrderView = {
   discount: number;
   total: number;
   payment: { method: PaymentMethod; status: PaymentStatus; memo: string; transfer: TransferInfo };
+  /** Đang giữ suất chờ CK (§18.2) — hạn ISO. */
+  holdUntil: string | null;
+  /** Đơn tự huỷ vì hết giờ giữ suất. */
+  holdExpired: boolean;
+  /** Đơn huỷ vì quán khoá lò (§18.1) → lý do; null = không phải. */
+  pausedReason: string | null;
+  /** Chấm điểm khẩu vị (§18.5); null = chưa/không còn mở. */
+  feedback: FeedbackView | null;
+};
+
+export type FeedbackView = {
+  items: RatableItem[];
+  /** Bản đã gửi (để sửa). */
+  saved: { ratings: Record<string, Score>; tags: Record<string, string[]>; comment: string | null } | null;
+  editable: boolean;
 };
 
 export async function getOrderView(token: string, now: Date, db: Executor = getDb()): Promise<OrderView | null> {
   if (!/^[\w-]{22}$/.test(token)) return null;
+  await releaseExpiredHolds(now, db);
   const [row] = await db
     .select({ order: t.orders, batch: t.batches, zoneName: t.zones.name, point: t.pickupPoints })
     .from(t.orders)
@@ -465,10 +492,12 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
     .limit(1);
   if (!row) return null;
   const { order: o, batch: b } = row;
-  const [items, { ordering }] = await Promise.all([
+  const [items, { ordering }, [saved]] = await Promise.all([
     db.select().from(t.orderItems).where(eq(t.orderItems.orderId, o.id)).orderBy(t.orderItems.id),
     loadSettings(db),
+    db.select().from(t.feedback).where(eq(t.feedback.orderId, o.id)).limit(1),
   ]);
+  const feedback = canRate(o.status, o.serviceDate, vnDateOf(now)) ? await feedbackView(items, saved ?? null, now, db) : null;
 
   const readyLabel = vnTimeLabel(b.readyAt);
   const etaEnd = vnTimeLabel(new Date(b.readyAt.getTime() + ordering.deliveryWindowMin * 60_000));
@@ -509,5 +538,34 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
       memo: transferMemo(o.serviceDate, o.seq),
       transfer: transferFor(o.total, transferMemo(o.serviceDate, o.seq)),
     },
+    holdUntil: isHeld(o) ? o.holdUntil!.toISOString() : null,
+    holdExpired: o.status === "cancelled" && o.cancelReason === HOLD_EXPIRED_REASON,
+    pausedReason: o.status === "cancelled" ? pauseCancelOf(o.cancelReason) : null,
+    feedback,
   };
+}
+
+async function feedbackView(
+  items: (typeof t.orderItems.$inferSelect)[],
+  saved: typeof t.feedback.$inferSelect | null,
+  now: Date,
+  db: Executor,
+): Promise<FeedbackView | null> {
+  const list = await ratableFor(items, db);
+  if (list.length === 0) return null;
+  return {
+    items: list,
+    saved: saved ? { ratings: saved.ratings, tags: saved.tags, comment: saved.comment } : null,
+    editable: !saved || canEditFeedback(saved.createdAt, now),
+  };
+}
+
+export async function ratableFor(items: (typeof t.orderItems.$inferSelect)[], db: Executor): Promise<RatableItem[]> {
+  const ids = [...new Set(items.flatMap((i) => [i.productId, ...Object.values(i.comboChoices ?? {})]))];
+  if (ids.length === 0) return [];
+  const products = await db.select({ id: t.products.id, name: t.products.name, kind: t.products.kind }).from(t.products).where(inArray(t.products.id, ids));
+  return ratableItems(
+    items.map((i) => ({ productId: i.productId, isGift: i.isGift, parentId: i.parentItemId, comboChoices: i.comboChoices })),
+    new Map(products.map((p) => [p.id, p])),
+  );
 }

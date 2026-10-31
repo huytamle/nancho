@@ -15,6 +15,7 @@ import { opsCopy, type OpsTab } from "@/data/copy-ops";
 import type { WorkView } from "@/lib/server/dal/checklist";
 import type { OpsView } from "@/lib/server/dal/ops";
 import type { PayrollView, TimeView } from "@/lib/server/dal/payroll";
+import type { OvenLockView } from "@/lib/server/dal/sale-day";
 
 const t = opsCopy;
 
@@ -33,6 +34,7 @@ export function OpsDashboard({
   work,
   time,
   payroll,
+  lock,
   handbook,
   bookPage,
   initialTab,
@@ -42,6 +44,8 @@ export function OpsDashboard({
   work: WorkView;
   time: TimeView;
   payroll: PayrollView | null;
+  /** Khoá lò (§18.1) — chỉ owner/manager/kitchen. */
+  lock: OvenLockView | null;
   handbook: ReactNode;
   bookPage: string | null;
   initialTab: OpsTab;
@@ -113,7 +117,7 @@ export function OpsDashboard({
             {t.metaTitle} — {t.tabs[tab]}
           </h1>
           {tab === "ca" ? (
-            <ShiftPanel view={view} work={work} />
+            <ShiftPanel view={view} work={work} lock={lock} />
           ) : tab === "viec" ? (
             <ChecklistPanel work={work} />
           ) : tab === "cong" ? (

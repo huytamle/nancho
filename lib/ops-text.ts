@@ -116,6 +116,10 @@ export const BOT_HELP = [
   "Trả lời tin xác nhận bằng ảnh để đính kèm hoá đơn.",
   "/chihuy C123 — huỷ (trong 24 giờ)",
   "/tonghop — tổng chi tháng này",
+  "",
+  "Khoá lò khẩn cấp (chủ quán/quản lý/bếp):",
+  "/khoalo mất điện — ngưng nhận đơn hôm nay + danh sách đơn cần gọi",
+  "/molo — mở lại",
 ].join("\n");
 
 /** Số đo checklist ngoài ngưỡng (§17.5): "⚠️ Tủ mát bếp: 7 °C (chuẩn ≤ 5 °C) · Nhiệt độ tủ · Vy 14:05". */

@@ -17,6 +17,8 @@ export type NewOrderNotice = {
   needsConfirm: boolean;
   note: string | null;
   link: string;
+  /** "17:32" khi đơn bắt buộc trả trước đang giữ suất (§18.2). */
+  holdUntil?: string | null;
 };
 
 const k = (vnd: number) => `${Math.round(vnd / 1000)}k`;
@@ -28,7 +30,7 @@ export function newOrderText(o: NewOrderNotice): string {
   return [
     `🆕 #${o.seq} · ${batchLabel(o.readyLabel, o.dayLabel)} · ${o.name} ${formatPhone(o.phone)} · ${o.where} · ${items} · ${k(o.total)} · ${pay}`,
     o.note ? `📝 ${o.note}` : null,
-    o.needsConfirm ? "⚠ Khách mới — gọi xác nhận" : null,
+    o.holdUntil ? `⏳ Giữ suất đến ${o.holdUntil} — chờ CK, quá hạn tự huỷ` : o.needsConfirm ? "⚠ Khách mới — gọi xác nhận" : null,
     `${o.code} · ${o.link}`,
   ]
     .filter(Boolean)
@@ -50,7 +52,9 @@ export type PaymentNotice =
   | { kind: "paid"; seq: number; amount: number }
   | { kind: "partial"; seq: number; amount: number; received: number; total: number }
   | { kind: "extra"; seq: number; amount: number; status: "already_paid" | "cancelled" }
-  | { kind: "unmatched"; amount: number; content: string };
+  | { kind: "unmatched"; amount: number; content: string }
+  /** Tiền đến sau khi hết giờ giữ suất (§18.2): mở lại được (`reopened`) hoặc mẻ đã kín. */
+  | { kind: "late"; seq: number; amount: number; reopened: boolean };
 
 export function paymentText(n: PaymentNotice): string {
   switch (n.kind) {
@@ -60,7 +64,60 @@ export function paymentText(n: PaymentNotice): string {
       return `⚠ #${n.seq} chuyển thiếu: nhận ${vnd(n.amount)} · tổng đã nhận ${vnd(n.received)}/${vnd(n.total)} — gọi khách`;
     case "extra":
       return `⚠ #${n.seq} nhận thêm ${vnd(n.amount)} nhưng đơn ${n.status === "cancelled" ? "đã huỷ" : "đã trả đủ"} — kiểm tra hoàn tiền`;
+    case "late":
+      return n.reopened
+        ? `💰 #${n.seq} CK ${vnd(n.amount)} sau khi hết giữ suất — mẻ còn chỗ, đã mở lại & xác nhận đơn`
+        : `⚠ #${n.seq} CK ${vnd(n.amount)} sau khi hết giữ suất — mẻ đã kín, cần hoàn hoặc chuyển mẻ`;
     case "unmatched":
       return `⚠ Tiền về ${vnd(n.amount)} không khớp đơn nào · "${n.content.slice(0, 120)}" — đối chiếu rồi bấm [Đã trả] trên đơn trong dashboard`;
   }
+}
+
+// ── Gói "Ngày bán" (§18) ──
+
+export type AffectedOrder = {
+  seq: number;
+  name: string;
+  phone: string;
+  readyLabel: string;
+  dayLabel: string;
+  /** Đã trả bao nhiêu (0 = COD/chưa trả). */
+  paid: number;
+};
+
+/** Tin khoá lò (§18.1) + danh sách đơn bị ảnh hưởng — gửi cùng nội dung màn bếp. */
+export function ovenPausedText(o: { by: string; reason: string; days: string; orders: AffectedOrder[] }): string {
+  const head = `⛔ KHOÁ LÒ ${o.days} · ${o.reason || "không ghi lý do"} · ${o.by}`;
+  if (o.orders.length === 0) return `${head}\nKhông có đơn nào bị ảnh hưởng.`;
+  const refund = o.orders.filter((x) => x.paid > 0);
+  return [
+    head,
+    `Đơn bị ảnh hưởng (${o.orders.length}) — gọi từng khách:`,
+    ...o.orders.map(
+      (x) =>
+        `#${x.seq} ${x.name} ${formatPhone(x.phone)} · ${batchLabel(x.readyLabel, x.dayLabel, "mẻ")} · ${x.paid > 0 ? `đã trả ${vnd(x.paid)} → cần hoàn` : "COD"}`,
+    ),
+    refund.length > 0 ? `💸 Cần hoàn ${refund.length} đơn · ${vnd(refund.reduce((s, x) => s + x.paid, 0))}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export const ovenResumedText = (o: { by: string; days: string }) => `✅ MỞ LÒ ${o.days} · ${o.by} — khách đặt lại được.`;
+
+export function refundText(o: { seq: number; amount: number; method: "transfer" | "cash"; by: string; note: string | null }): string {
+  return `💸 #${o.seq} đã hoàn ${vnd(o.amount)} (${o.method === "cash" ? "tiền mặt" : "CK"}) · ${o.by}${o.note ? ` · ${o.note}` : ""}`;
+}
+
+/** Bàn giao COD lệch (§18.4); vượt ngưỡng → ⚠. */
+export function handoverText(o: { shipper: string; receiver: string; expected: number; received: number; orders: number; tolerance: number }): string {
+  const diff = o.received - o.expected;
+  const mark = Math.abs(diff) > o.tolerance ? "⚠" : "ℹ";
+  return `${mark} Bàn giao COD ${o.shipper} → ${o.receiver}: ${o.orders} đơn · đáng có ${vnd(o.expected)} · nhận ${vnd(o.received)} · ${diff > 0 ? "dư" : "thiếu"} ${vnd(Math.abs(diff))}`;
+}
+
+/** "⭐ #12 Pepperoni 😋 · BBQ 😕 ngọt hơn — 'hơi mặn'". */
+export function feedbackText(o: { seq: number; lines: { name: string; emoji: string; tags: string[] }[]; comment: string | null; edited: boolean }): string {
+  const lines = o.lines.map((l) => `${l.name} ${l.emoji}${l.tags.length ? ` ${l.tags.join(", ")}` : ""}`).join(" · ");
+  return `⭐ #${o.seq}${o.edited ? " (sửa)" : ""} ${lines}${o.comment ? ` — "${o.comment}"` : ""}`;
 }

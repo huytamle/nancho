@@ -1,5 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
+import { boxCode, type BoxCode } from "@/lib/domain/box-code";
+import { isHeld } from "@/lib/domain/hold";
 import { buildPrepReport, type PrepReport } from "@/lib/domain/prep";
 import { addDays, vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
 import type {
@@ -19,6 +21,8 @@ import { ORDER_ADDRESS_RETENTION_DAYS } from "@/lib/privacy";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { sendMonthlyExpenseSummary } from "@/lib/server/dal/ops";
+import { releaseExpiredHolds } from "@/lib/server/dal/holds";
+import { loadHandovers, type HandoverView } from "@/lib/server/dal/sale-day";
 import { ensureBatches } from "@/lib/server/dal/schedule";
 import { loadSettings } from "@/lib/server/dal/settings";
 
@@ -54,6 +58,10 @@ export type KitchenOrder = {
   note: string | null;
   cancelReason: string | null;
   createdAt: string;
+  /** Thẻ nắp hộp (§18.3). */
+  box: BoxCode;
+  /** Đơn bắt buộc trả trước đang giữ suất chờ CK (§18.2) — hạn ISO. */
+  holdUntil: string | null;
 };
 
 export type KitchenBatch = {
@@ -99,13 +107,16 @@ export type KitchenDay = {
   zones: { id: number; name: string; routeId: number; shipFee: number }[];
   routes: { id: number; name: string }[];
   points: { id: number; name: string }[];
+  /** Bàn giao tiền COD theo shipper (§18.4). */
+  handovers: HandoverView;
 };
 
 const PAST_DAYS = 1;
 
 export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = getDb()): Promise<KitchenDay> {
   const today = vnDateOf(now);
-  const [settings, dayRows, batchRows, orderRows, productRows, ingredientRows, recipeRows, zoneRows, routeRows, pointRows] =
+  await releaseExpiredHolds(now, db);
+  const [settings, dayRows, batchRows, orderRows, productRows, ingredientRows, recipeRows, zoneRows, routeRows, pointRows, handovers] =
     await Promise.all([
       loadSettings(db),
       db.select().from(t.serviceDays).where(eq(t.serviceDays.date, date)).limit(1),
@@ -117,6 +128,7 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
       db.select().from(t.zones).orderBy(asc(t.zones.sort), asc(t.zones.id)),
       db.select().from(t.routes).orderBy(asc(t.routes.sort), asc(t.routes.id)),
       db.select().from(t.pickupPoints).orderBy(asc(t.pickupPoints.id)),
+      loadHandovers(date, db),
     ]);
   const items =
     orderRows.length === 0
@@ -128,6 +140,7 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
           .orderBy(asc(t.orderItems.id));
 
   const productName = new Map(productRows.map((p) => [p.id, p.name]));
+  const kindOf = new Map(productRows.map((p) => [p.id, p.kind]));
   const comboGroups = new Map(productRows.map((p) => [p.id, (p.comboConfig ?? []).map((g) => g.key)]));
   const zoneById = new Map(zoneRows.map((z) => [z.id, z]));
   const pointById = new Map(pointRows.map((p) => [p.id, p]));
@@ -177,6 +190,15 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
       note: o.note,
       cancelReason: o.cancelReason,
       createdAt: o.createdAt.toISOString(),
+      box: boxCode({
+        seq: o.seq,
+        collect: o.paymentStatus === "unpaid" ? o.total : 0,
+        fulfillment: o.fulfillment,
+        // Add-on theo loại món (gồm cả quà), không theo parent_item_id — đơn nhập tay/cũ có thể không gắn món cha.
+        addons: own.filter((i) => kindOf.get(i.productId) === "addon").map((i) => ({ name: i.name, qty: i.qty })),
+        units: o.panUnits + o.bbqUnits,
+      }),
+      holdUntil: isHeld(o) ? o.holdUntil!.toISOString() : null,
     };
   });
 
@@ -247,6 +269,7 @@ export async function loadKitchenDay(date: ISODate, now: Date, db: Executor = ge
     zones: zoneRows.filter((z) => z.isActive).map((z) => ({ id: z.id, name: z.name, routeId: z.routeId, shipFee: z.shipFee })),
     routes: routeRows.map((r) => ({ id: r.id, name: r.name })),
     points: pointRows.filter((p) => p.isActive).map((p) => ({ id: p.id, name: p.name })),
+    handovers,
   };
 }
 
@@ -307,6 +330,16 @@ export async function runDaily(now: Date, send: (text: string) => Promise<boolea
       ),
     )
     .returning({ id: t.orders.id });
+  // Góp ý chữ của khách (§18.5) xoá cùng thời hạn với địa chỉ trên đơn; điểm (không định danh) giữ lại cho thống kê.
+  await db
+    .update(t.feedback)
+    .set({ comment: null })
+    .where(
+      and(
+        isNotNull(t.feedback.comment),
+        sql`${t.feedback.orderId} IN (SELECT ${t.orders.id} FROM ${t.orders} WHERE ${t.orders.serviceDate} < ${addDays(today, -ORDER_ADDRESS_RETENTION_DAYS)})`,
+      ),
+    );
 
   let summarySent = false;
   const [{ last } = { last: null }] = await db

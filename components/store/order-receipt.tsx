@@ -1,3 +1,5 @@
+import { FeedbackForm } from "@/components/store/feedback-form";
+import { HoldCountdown } from "@/components/store/hold-countdown";
 import { CancelOrder, LiveRefresh, Reorder } from "@/components/store/order-receipt-actions";
 import { TransferBox } from "@/components/store/transfer-box";
 import { copy } from "@/data/copy";
@@ -33,9 +35,16 @@ export function OrderReceipt({ token, view: v }: { token: string; view: OrderVie
       </header>
 
       {ended ? (
-        <p role="status" className="rounded-field border border-danger/50 px-4 py-3 font-medium">
-          {v.stage === "cancelled" ? t.cancelled : t.stages.no_show}
-        </p>
+        <div role="status" className="rounded-field border border-danger/50 px-4 py-3 font-medium">
+          <p>
+            {v.pausedReason !== null ? t.paused(v.pausedReason) : v.holdExpired ? t.holdExpired : v.stage === "cancelled" ? t.cancelled : t.stages.no_show}
+          </p>
+          {v.holdExpired ? (
+            <div className="mt-3 flex flex-col">
+              <Reorder lines={v.reorder} label={t.holdExpiredCta} />
+            </div>
+          ) : null}
+        </div>
       ) : (
         <section aria-label={t.progress}>
           <ol className="flex gap-1.5">
@@ -100,11 +109,14 @@ export function OrderReceipt({ token, view: v }: { token: string; view: OrderVie
           </div>
         </dl>
         <p className="mt-2 text-sm text-secondary">
-          {v.payment.status === "paid" ? `✓ ${t.paid}` : v.payment.method === "cod" ? t.cod : t.transferPending}
+          {v.payment.status === "paid" ? `✓ ${t.paid}` : v.payment.status === "refunded" ? t.refunded : v.payment.method === "cod" ? t.cod : t.transferPending}
         </p>
       </section>
 
+      {v.holdUntil && unpaidTransfer ? <HoldCountdown until={v.holdUntil} /> : null}
       {unpaidTransfer ? <TransferBox info={v.payment.transfer} /> : null}
+
+      {v.feedback ? <FeedbackForm token={token} feedback={v.feedback} /> : null}
 
       <div className="flex flex-col gap-2">
         {v.stage === "completed" ? <Reorder lines={v.reorder} /> : null}

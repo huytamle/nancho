@@ -4,6 +4,7 @@
 //   /chi 1tr2 phô mai 5kg #tui   → tiền túi (chờ hoàn)
 //   /chi 320.000 gas #ck         → chuyển khoản từ TK hộ kinh doanh
 //   /chihuy C123 · /tonghop · /start <mã liên kết> · /help
+//   /khoalo [lý do] · /molo        → khoá/mở lò khẩn cấp (§18.1)
 
 import { fold, parseAmount } from "@/lib/domain/money-text";
 
@@ -74,6 +75,8 @@ export type BotCommand =
   | { kind: "summary" }
   | { kind: "link"; token: string }
   | { kind: "help" }
+  | { kind: "pause"; reason: string }
+  | { kind: "resume" }
   | { kind: "invalid"; reason: "amount" | "description" | "code" };
 
 /** Mã chứng từ hiển thị: C123. */
@@ -106,6 +109,10 @@ export function parseBotCommand(text: string, botUsername?: string): BotCommand 
       return rest ? { kind: "link", token: rest } : { kind: "help" };
     case "help":
       return { kind: "help" };
+    case "khoalo":
+      return { kind: "pause", reason: rest.slice(0, 80) };
+    case "molo":
+      return { kind: "resume" };
     default:
       return null;
   }

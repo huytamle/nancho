@@ -134,6 +134,10 @@ export const opsCopy = {
     back: "Sổ tay",
     meta: (kind: string, v: number, by: string | null, date: string) => `${kind} · bản ${v}${by ? ` · ${by} sửa ${date}` : ""}`,
     recipeTitle: (product: string) => `Định lượng · ${product} (1 phần)`,
+    taste: "Khách chấm 4 tuần:",
+    tasteNone: "chưa có lượt nào.",
+    tasteLine: (avg: string, n: number, unhappy: number, tags: string) =>
+      `${avg}/3 · ${n} lượt${unhappy > 0 ? ` · 😕 ${unhappy}` : ""}${tags ? ` (${tags})` : ""}`,
     ingredient: "Nguyên liệu",
     qty: "Lượng",
     watermark: (name: string, date: string) => `${name} · ${date}`,

@@ -85,7 +85,7 @@ export function CancelOrder({ token, cutoffLabel }: { token: string; cutoffLabel
 }
 
 /** Thêm lại các món của đơn vào giỏ rồi mở "Chốt đơn" — giá & suất tính lại theo hôm nay. */
-export function Reorder({ lines }: { lines: OrderView["reorder"] }) {
+export function Reorder({ lines, label = t.reorder }: { lines: OrderView["reorder"]; label?: string }) {
   const router = useRouter();
   return (
     <button
@@ -96,7 +96,7 @@ export function Reorder({ lines }: { lines: OrderView["reorder"] }) {
       }}
       className="inline-flex h-12 items-center justify-center rounded-full bg-accent font-semibold text-on-accent"
     >
-      {t.reorder}
+      {label}
     </button>
   );
 }

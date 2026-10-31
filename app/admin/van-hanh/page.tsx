@@ -8,6 +8,8 @@ import { serverNow } from "@/lib/server/clock";
 import { loadWorkView } from "@/lib/server/dal/checklist";
 import { loadHandbookView } from "@/lib/server/dal/handbook";
 import { loadOpsView } from "@/lib/server/dal/ops";
+import { loadOvenLock, SALE_DAY_ROLES } from "@/lib/server/dal/sale-day";
+import { hasRole } from "@/lib/domain/roles";
 import { loadPayrollView, loadTimeView } from "@/lib/server/dal/payroll";
 import { isISODate } from "@/lib/domain/time";
 import { isPeriod } from "@/lib/domain/worktime";
@@ -36,12 +38,13 @@ async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchP
   const period = typeof ky === "string" && isPeriod(ky) ? ky : null;
   const week = typeof tuan === "string" && isISODate(tuan) ? tuan : null;
   const ip = await clientIp();
-  const [view, work, book, time, payroll] = await Promise.all([
+  const [view, work, book, time, payroll, lock] = await Promise.all([
     loadOpsView(actor, now),
     loadWorkView(actor, now),
     loadHandbookView(actor, slug, now),
     loadTimeView(actor, now, { ip, period, week }),
     loadPayrollView(actor, now, { period }),
+    hasRole(staff.roles, SALE_DAY_ROLES) ? loadOvenLock(now) : null,
   ]);
   return (
     <OpsDashboard
@@ -49,6 +52,7 @@ async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchP
       work={work}
       time={time}
       payroll={payroll}
+      lock={lock}
       handbook={<HandbookPanel view={book} now={now.toISOString()} />}
       bookPage={book.page?.slug ?? null}
       initialTab={initial}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { HoldBadge } from "@/components/admin/box-card";
 import { ItemsList, StatusPill } from "@/components/admin/order-bits";
 import { useKitchen } from "@/components/admin/use-admin";
 import { copy } from "@/data/copy";
@@ -110,6 +111,7 @@ export function OrderList() {
                     <span className="font-semibold">{o.customerName}</span>
                     <span className="text-sm text-secondary tabular-nums">{formatPhone(o.customerPhone)}</span>
                     <StatusPill status={o.status} />
+                    {o.holdUntil ? <HoldBadge until={o.holdUntil} /> : null}
                   </span>
                   <span className="mt-0.5 block text-sm text-secondary">
                     {t.batchOption(readyOf.get(o.batchId) ?? "")} · {o.fulfillment === "pickup" ? t.pickup(o.pickupName ?? "") : o.zoneName}
@@ -121,6 +123,11 @@ export function OrderList() {
                 </span>
                 <span className="shrink-0 text-right text-sm tabular-nums">
                   <span className="block font-semibold">{formatPrice(o.total)}</span>
+                  {o.status !== "cancelled" ? (
+                    <span className="block font-bold text-text" translate="no" aria-label={`${copy.admin.box.title}: ${o.box.code}`}>
+                      {o.box.code}
+                    </span>
+                  ) : null}
                   <span className={`block ${o.collect > 0 && o.paymentMethod === "transfer" ? "text-warn" : "text-secondary"}`}>
                     {o.collect === 0 ? t.paid : o.paymentMethod === "transfer" ? t.transferUnpaid : "COD"}
                   </span>

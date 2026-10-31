@@ -1,6 +1,8 @@
 "use client";
 
 import { advanceOrders } from "@/app/actions/admin";
+import { BoxCard } from "@/components/admin/box-card";
+import { HandoverPanel } from "@/components/admin/handover-panel";
 import { NoteLine, StatusPill } from "@/components/admin/order-bits";
 import { copyText, telHref, useAdminAction, useKitchen } from "@/components/admin/use-admin";
 import { copy } from "@/data/copy";
@@ -30,7 +32,13 @@ export function DeliveryBoard() {
     run(() => advanceOrders({ orderIds: ids, to }), ok);
 
   const groups = day.prep.batches.filter((b) => b.routes.length > 0 || b.pickups.length > 0);
-  if (groups.length === 0) return <p className="py-10 text-center text-secondary">{t.empty}</p>;
+  if (groups.length === 0)
+    return (
+      <div className="space-y-6">
+        <p className="py-10 text-center text-secondary">{t.empty}</p>
+        <HandoverPanel />
+      </div>
+    );
 
   const btn = "min-h-14 rounded-full px-4 text-[15px] font-semibold disabled:opacity-40";
 
@@ -88,6 +96,9 @@ export function DeliveryBoard() {
                         </span>
                       </div>
                       <NoteLine note={s.note ?? null} />
+                      <div className="mt-2">
+                        <BoxCard order={o!} readyLabel={b.readyLabel} />
+                      </div>
                       <div className="mt-2 grid grid-cols-3 gap-2">
                         <a href={telHref(s.phone)} className={`${btn} flex items-center justify-center bg-elevated`}>
                           📞<span className="sr-only">{formatPhone(s.phone)}</span>
@@ -119,19 +130,24 @@ export function DeliveryBoard() {
                   const o = byCode.get(x.code);
                   if (!o) return null;
                   return (
-                    <li key={x.code} className="flex items-center gap-3 py-3">
-                      <span className="w-12 shrink-0 text-xl font-bold tabular-nums">#{x.seq}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-semibold">{x.name}</span>
-                        <span className="block text-sm text-secondary tabular-nums">{x.collect > 0 ? copy.admin.orders.collect(formatPrice(x.collect)) : copy.admin.orders.paid}</span>
-                      </span>
-                      {can(o, "completed") ? (
-                        <button type="button" disabled={pending} onClick={() => act([o.id], "completed")} className={`${btn} bg-live text-black`}>
-                          {t.handed}
-                        </button>
-                      ) : (
-                        <StatusPill status={o.status} />
-                      )}
+                    <li key={x.code} className="py-3">
+                      <div className="flex items-center gap-3">
+                        <span className="w-12 shrink-0 text-xl font-bold tabular-nums">#{x.seq}</span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-semibold">{x.name}</span>
+                          <span className="block text-sm text-secondary tabular-nums">{x.collect > 0 ? copy.admin.orders.collect(formatPrice(x.collect)) : copy.admin.orders.paid}</span>
+                        </span>
+                        {can(o, "completed") ? (
+                          <button type="button" disabled={pending} onClick={() => act([o.id], "completed")} className={`${btn} bg-live text-black`}>
+                            {t.handed}
+                          </button>
+                        ) : (
+                          <StatusPill status={o.status} />
+                        )}
+                      </div>
+                      <div className="mt-2">
+                        <BoxCard order={o} readyLabel={b.readyLabel} />
+                      </div>
                     </li>
                   );
                 })}
@@ -140,6 +156,7 @@ export function DeliveryBoard() {
           ))}
         </section>
       ))}
+      <HandoverPanel />
     </div>
   );
 }

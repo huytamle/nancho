@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
+import { HoldCountdown } from "@/components/store/hold-countdown";
 import { TransferBox } from "@/components/store/transfer-box";
 import type { PlaceOrderResult } from "@/lib/order-contract";
 
@@ -24,6 +25,7 @@ export function OrderSuccess({ result, onDone }: { result: Extract<PlaceOrderRes
       </p>
       <p className="mt-1 text-sm text-secondary tabular-nums">{result.code}</p>
 
+      {result.holdUntil ? <HoldCountdown until={result.holdUntil} refreshOnExpire={false} className="mt-5 w-full" /> : null}
       {pay.method === "transfer" ? <TransferBox info={pay} className="mt-5 w-full" /> : null}
 
       <div className="mt-6 flex w-full flex-col gap-2">

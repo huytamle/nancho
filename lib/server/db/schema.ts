@@ -281,6 +281,8 @@ export const orders = pgTable(
     trackingToken: text().notNull().unique(),
     idempotencyKey: uuid().notNull().unique(),
     cancelReason: text(),
+    /** Hạn giữ suất cho đơn bắt buộc trả trước (§18.2); null = không có hạn. */
+    holdUntil: tstz(),
     createdAt: createdAt(),
     updatedAt: tstz()
       .notNull()
@@ -292,6 +294,8 @@ export const orders = pgTable(
     index("orders_service_date_batch_id_idx").on(t.serviceDate, t.batchId),
     index("orders_customer_phone_idx").on(t.customerPhone),
     index("orders_status_idx").on(t.status),
+    // releaseExpiredHolds chạy mỗi lần xem lò/đặt đơn → chỉ quét các đơn đang giữ suất.
+    index("orders_hold_until_idx").on(t.holdUntil).where(sql`${t.status} = 'placed' AND ${t.paymentStatus} = 'unpaid' AND ${t.holdUntil} IS NOT NULL`),
     // Bất biến §6.3.4: đúng một trong zone_id / pickup_point_id, khớp với fulfillment.
     check(
       "orders_fulfillment_check",
@@ -341,7 +345,7 @@ export const orderEvents = pgTable(
     orderId: uuid()
       .notNull()
       .references(() => orders.id, { onDelete: "cascade" }),
-    type: text().$type<"placed" | "status_changed" | "paid" | "cancelled" | "edited">().notNull(),
+    type: text().$type<"placed" | "status_changed" | "paid" | "cancelled" | "edited" | "refunded">().notNull(),
     data: jsonb(),
     actor: text().notNull(),
     createdAt: createdAt(),
@@ -352,7 +356,8 @@ export const orderEvents = pgTable(
 export const payments = pgTable("payments", {
   id: serial().primaryKey(),
   orderId: uuid().references(() => orders.id, { onDelete: "set null" }),
-  provider: text().$type<"sepay" | "manual">().notNull(),
+  /** `refund` = tiền hoàn cho khách (§18.1), `amount` âm. App không tự chuyển tiền — chỉ ghi nhận. */
+  provider: text().$type<"sepay" | "manual" | "refund">().notNull(),
   providerTxnId: text().notNull().unique(),
   amount: integer().notNull(),
   memo: text(),
@@ -683,6 +688,52 @@ export const payslips = pgTable(
     check("payslips_total_check", sql`${t.total} >= 0`),
     check("payslips_paid_check", sql`(${t.status} = 'paid') = (${t.paidAt} IS NOT NULL)`),
   ],
+).enableRLS();
+
+// ── Gói "Ngày bán" (§18, M9.5) ──
+
+/** Bàn giao tiền COD của shipper (§18.4). Mỗi đơn chỉ nằm trong một lần bàn giao (kiểm ở DAL, dưới khoá dòng đơn). */
+export const cashHandovers = pgTable(
+  "cash_handovers",
+  {
+    id: serial().primaryKey(),
+    serviceDate: isoDate().notNull(),
+    shipperId: integer()
+      .notNull()
+      .references(() => staff.id),
+    orderIds: uuid().array().notNull(),
+    expected: integer().notNull(),
+    received: integer().notNull(),
+    receivedBy: integer()
+      .notNull()
+      .references(() => staff.id),
+    note: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.serviceDate),
+    check("cash_handovers_amount_check", sql`${t.expected} >= 0 AND ${t.received} >= 0`),
+    check("cash_handovers_orders_check", sql`cardinality(${t.orderIds}) > 0`),
+    check("cash_handovers_people_check", sql`${t.shipperId} <> ${t.receivedBy}`),
+  ],
+).enableRLS();
+
+/** Chấm điểm khẩu vị (§18.5): một bản mỗi đơn; `ratings` = { productId: 1 (chưa hợp) | 2 (được) | 3 (ngon) }. */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: serial().primaryKey(),
+    orderId: uuid()
+      .notNull()
+      .unique()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    ratings: jsonb().$type<Record<string, 1 | 2 | 3>>().notNull(),
+    tags: jsonb().$type<Record<string, string[]>>().notNull().default({}),
+    comment: text(),
+    createdAt: createdAt(),
+    updatedAt: createdAt(),
+  },
+  (t) => [index().on(t.createdAt), check("feedback_comment_check", sql`char_length(${t.comment}) <= 300`)],
 ).enableRLS();
 
 export type Order = typeof orders.$inferSelect;

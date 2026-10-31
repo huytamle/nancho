@@ -8,6 +8,7 @@ import { BatchBoard } from "@/components/admin/batch-board";
 import { DeliveryBoard } from "@/components/admin/delivery-board";
 import { OrderDetailSheet } from "@/components/admin/order-detail-sheet";
 import { OrderList } from "@/components/admin/order-list";
+import { OvenLock } from "@/components/admin/oven-lock";
 import { PrepBoard } from "@/components/admin/prep-board";
 import { QuickOrderSheet } from "@/components/admin/quick-order-sheet";
 import { SettingsPanel } from "@/components/admin/settings-panel";
@@ -19,6 +20,7 @@ import { opsCopy } from "@/data/copy-ops";
 import { showToast } from "@/lib/client/toast-store";
 import type { StaffRole } from "@/lib/domain/order-status";
 import type { KitchenDay } from "@/lib/server/dal/kitchen";
+import type { OvenLockView } from "@/lib/server/dal/sale-day";
 
 const t = copy.admin;
 const REFRESH_MS = 20_000;
@@ -52,7 +54,17 @@ const subscribeOnline = (l: () => void) => {
   };
 };
 
-export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; staff: { name: string; role: StaffRole; orderRoles: StaffRole[] }; initialTab: KitchenTab }) {
+export function KitchenDashboard({
+  day,
+  lock,
+  staff,
+  initialTab,
+}: {
+  day: KitchenDay;
+  lock: OvenLockView | null;
+  staff: { name: string; role: StaffRole; orderRoles: StaffRole[] };
+  initialTab: KitchenTab;
+}) {
   const router = useRouter();
   const tabs = TABS_FOR[staff.role];
   const [tab, setTab] = useState<KitchenTab>(tabs.includes(initialTab) ? initialTab : tabs[0]);
@@ -199,6 +211,7 @@ export function KitchenDashboard({ day, staff, initialTab }: { day: KitchenDay; 
 
           <main id="noi-dung" className="mx-auto max-w-3xl px-4 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-10">
             <h1 className="sr-only">{t.tabs[tab]}</h1>
+            {lock && tab !== "cai-dat" ? <OvenLock lock={lock} className="mb-5" /> : null}
             {tab === "chuan-bi" ? <PrepBoard /> : null}
             {tab === "me" ? <BatchBoard /> : null}
             {tab === "don" ? <OrderList /> : null}
