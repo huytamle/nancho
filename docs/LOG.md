@@ -22,7 +22,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M1 — Domain lõi thuần + test** | ✅ | `04108eb` |
 | **M2 — DB & DAL** | ✅ | `bf92fda` |
 | **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
-| **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
+| **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | `c03560b` |
 | M5 — Kitchen Dashboard | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
