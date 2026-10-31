@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.1 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Phiên bản:** 1.2 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.2:** ✅ Giữ **Café, KOLD Gelato và Đặt bàn** của quán THE HEAT thành mục riêng `/tai-quan` (§5.4) — không thuộc luồng đặt món · Thêm token `--on-accent` (chữ đen trên nền cam, §9.1) · M0 hoàn tất.
 > **Thay đổi 1.1:** ✅ Rêu vừa là **bếp** vừa là **điểm nhận** · ✅ Thực đơn & giá theo Phụ lục A là chính thức · Database mặc định đổi từ Neon sang **Supabase (Postgres, Singapore)**.
 > **Ngôn ngữ:** Văn bản tiếng Việt, tên code/biến/bảng bằng tiếng Anh.
 > **Tài liệu kèm theo:** [`docs/MARKETING.md`](./MARKETING.md) — chiến lược marketing đa kênh tại thị trấn.
@@ -109,7 +110,8 @@
 | `components/json-ld.tsx`, `app/icon.tsx`, `app/opengraph-image.*` | **Viết lại** nội dung cho THE HEAT PIZZA | |
 | Logo (`public/images/brand/logo-*.jpg`) | **Giữ** | Cần bản SVG/PNG nền trong suốt (§16) |
 | Ảnh món: `menu/bbq-ribs.jpg`, `menu/pan-bbq.jpg`, `pizza/…carrousel03.jpg` (pepperoni), `menu/sauce-*.jpg`, `menu/cold-brew.jpg` | **Giữ** làm ảnh tạm | Cần chụp mới cho Pizza Phô mai Bơ tỏi, BBQ #2, Combo |
-| Café, Gelato/KOLD, Fries, Gallery, Visit/Map, Reservation, Hero carousel | **Bỏ** | Ngoài phạm vi app đặt món |
+| Café, KOLD Gelato, Reservation (đặt bàn) | **Giữ thành mục riêng** `/tai-quan` | ✅ Chủ quán chốt: giữ cho quán ăn tại chỗ, sau này có thể cần. Server Components, chỉ tiếng Việt, không chung giỏ/catalog với app đặt món. Đặt bàn vẫn chỉ ghi log — lưu DB + Telegram khi cần (dùng lại hạ tầng M4) |
+| Fries, Gallery, Visit/Map nhúng iframe, Hero carousel | **Bỏ** | Ngoài phạm vi app đặt món |
 | `LanguageProvider`, `LanguageToggle`, `ThemeToggle`, script `themeInit` | **Bỏ** | Chuỗi UI chuyển vào `data/copy.ts` (chỉ `vi`, cấu trúc sẵn cho i18n sau này) |
 | `Header` với nav anchor | **Thay** bằng Oven Bar | |
 
@@ -118,7 +120,7 @@
 | Mức | Vấn đề | Vị trí | Bài học cho bản mới |
 |---|---|---|---|
 | 🔴 | Đơn giao hàng và đặt bàn **không được lưu** — chỉ `console.info` | `app/actions/*.ts` | Phải có DB + thông báo bếp + màn hình theo dõi đơn |
-| 🔴 | **Lỗi múi giờ:** `new Date("2026-11-06T18:00")` được parse theo giờ *server* (Vercel = UTC) rồi kiểm tra `getHours()` → kiểm tra "giờ mở cửa" và "thời điểm tương lai" lệch 7 tiếng | `app/actions/reservation.ts` | §7.1: mọi tính toán qua `lib/domain/time.ts` với offset `+07:00` |
+| 🔴 | **Lỗi múi giờ:** `new Date("2026-11-06T18:00")` được parse theo giờ *server* (Vercel = UTC) rồi kiểm tra `getHours()` → kiểm tra "giờ mở cửa" và "thời điểm tương lai" lệch 7 tiếng | `app/actions/reservation.ts` (✅ đã sửa ở M0) | §7.1: mọi tính toán qua `lib/domain/time.ts` với offset `+07:00` |
 | 🟠 | 4 lỗi ESLint `react-hooks/set-state-in-effect` | `delivery.tsx:26`, `language-provider.tsx:28`, `reservation-form.tsx:25`, `theme-toggle.tsx:33` | Dùng `useSyncExternalStore` cho dữ liệu từ `localStorage`; reset state theo `key` thay vì effect |
 | 🟠 | Toàn bộ UI là Client Component vì `useLanguage()` | `components/*` | Bỏ i18n runtime → Server Components mặc định |
 | 🟡 | `priority` trên `<Image>` đã deprecated ở Next 16 | `logo.tsx`, `hero.tsx`, `hero-gallery.tsx` | Dùng `preload` / `fetchPriority="high"` |
@@ -255,6 +257,7 @@ Brief gốc rất đúng hướng. Các điểm dưới đây làm nó **chạy 
 | `/m/[slug]` | Link chia sẻ từng món, có `opengraph-image` riêng | Render **cùng** trang đặt món với sheet món mở sẵn — **không** redirect HTTP (crawler Facebook/Zalo phải đọc OG của chính URL này). `alternates.canonical = /`; đóng sheet → `router.replace('/')`. `generateStaticParams` từ catalog |
 | `/o/[token]` | Biên nhận & theo dõi đơn | `token` ngẫu nhiên 128-bit; `noindex` |
 | `/chinh-sach` | Chính sách bảo mật & điều khoản đặt hàng | Bắt buộc về pháp lý; chỉ link từ footer & checkout |
+| `/tai-quan` | Quán ăn tại chỗ THE HEAT: thực đơn Café & KOLD Gelato, giờ mở cửa, form **đặt bàn** (`app/actions/reservation.ts`) | ✅ Thêm ở v1.2. Trang tĩnh; link từ trang đặt món (footer/brand strip), không nằm trong luồng đặt món |
 | `/admin/login` | Đăng nhập nhân viên (tên + PIN) | |
 | `/admin/kitchen` | **Dashboard bếp** (tab: Chuẩn bị · Mẻ nướng · Đơn · Giao · Cài đặt) | Query `?ngay=`, `?tab=` |
 | `/admin/kitchen/in` | Bản in Bảng Tổng Hợp (khổ A4/A5 hoặc giấy nhiệt 80 mm) | |
@@ -275,6 +278,7 @@ app/
   m/[slug]/page.tsx             # trang đặt món + sheet mở sẵn; opengraph-image.tsx
   o/[token]/page.tsx
   chinh-sach/page.tsx
+  tai-quan/page.tsx             # Café & KOLD Gelato + đặt bàn (quán ăn tại chỗ)
   admin/
     login/page.tsx
     kitchen/page.tsx
@@ -285,6 +289,7 @@ app/
     customer.ts                 # lookupCustomer
     admin.ts                    # mọi mutation của dashboard
     auth.ts                     # login, logout
+    reservation.ts              # createReservation (trang /tai-quan)
   api/
     oven/route.ts
     cron/daily/route.ts
@@ -303,6 +308,7 @@ components/
                                 #   settings-panel.tsx, tab-bar.tsx, wake-lock.tsx
 data/
   copy.ts                       # toàn bộ chuỗi UI tiếng Việt (typed object)
+  dine-in.ts                    # thực đơn Café & KOLD Gelato cho /tai-quan
   site.ts                       # thông tin thương hiệu, hotline, Zalo, pháp lý
 lib/
   domain/                       # THUẦN — không import DB/Next/React
@@ -761,6 +767,7 @@ Mọi action admin ghi `order_events` với `actor = staff:<id>`.
 | `--line` | `rgba(255,255,255,.10)` | viền |
 | `--text` / `--secondary` / `--tertiary` | `#f5f5f7` / `#a1a1a6` / `#6e6e73` | chữ |
 | `--accent` | `#ff3d00` | màu lửa thương hiệu: CTA chính, 🔥 |
+| `--on-accent` | `#000000` | chữ trên nền `--accent`. **Không dùng chữ trắng**: trắng/#ff3d00 chỉ 3,5:1 (trượt WCAG AA), đen đạt ≈ 5,9:1 |
 | `--accent-glow` | `color-mix(in srgb, #ff3d00 22%, transparent)` | gradient ấm sau ô Combo |
 | `--live` | `#30d158` | chấm "đang nhận" |
 | `--warn` | `#ff9f0a` | sắp chốt, tạm ngưng |
@@ -1138,6 +1145,9 @@ Gửi trong `after()` để không làm chậm phản hồi cho khách; lỗi g�
 | INP | ≤ 150 ms |
 | CLS | ≤ 0,05 (skeleton Oven Bar cùng chiều cao) |
 | JS tải lần đầu trang `/` | ≤ 110 KB gzip |
+
+> ⚠ **Đo ở M0 (31/10/2026):** riêng runtime Next 16.3 + React 19.2 (trang `/` chưa có client component nào của app) đã ≈ **139 KB gzip** cho trình duyệt hiện đại (chưa tính 39 KB polyfill `noModule`). Mục tiêu 110 KB không đạt được với framework hiện tại → **chờ chủ quán/tech lead chốt**: nâng ngân sách tổng (đề xuất ≤ 180 KB) hoặc đo riêng JS của app (đề xuất ≤ 40 KB gzip trên nền framework).
+
 | Tổng ảnh màn hình đầu | ≤ 350 KB (AVIF/WebP qua `next/image`, `images.formats: ['image/avif','image/webp']`) |
 
 Kỹ thuật: Server Components mặc định; chỉ các phần tương tác là client; React Compiler; font chỉ subset `latin` + `vietnamese`; ảnh ô hero `preload`, các ảnh khác lazy; không nhúng bản đồ iframe (dùng link Google Maps).
@@ -1180,13 +1190,15 @@ Kỹ thuật: Server Components mặc định; chỉ các phần tương tác l�
 
 Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc lập.
 
-### M0 — Dọn nền (≈ 1 ngày)
-- Xoá: café/gelato/fries/gallery/visit/reservation/hero carousel, `LanguageProvider`, `LanguageToggle`, `ThemeToggle`, script `themeInit`, `app/actions/reservation.ts`, ảnh không dùng (§2.3).
+### M0 — Dọn nền (≈ 1 ngày) ✅
+- Xoá: fries/gallery/visit/hero carousel/giỏ giao hàng cũ, `LanguageProvider`, `LanguageToggle`, `ThemeToggle`, script `themeInit`, ảnh không dùng (§2.3).
+- **Giữ** café, KOLD Gelato, đặt bàn → chuyển sang `/tai-quan` (Server Components, chỉ tiếng Việt). Action đặt bàn dùng zod + `lib/domain/phone.ts` + `lib/domain/time.ts` (sửa lỗi lệch múi giờ §2.3).
 - `data/copy.ts` (vi), `data/site.ts` mới (THE HEAT PIZZA, hotline, Zalo, Rêu, thông tin pháp lý placeholder).
 - `globals.css`: chỉ dark + token mới (§9.1). `layout.tsx`: `metadataBase` mới, `viewport-fit=cover`.
 - `next.config.ts`: `cacheComponents: true`, `reactCompiler: true`, `images.formats`, security headers.
 - Thêm phụ thuộc: `zod`, `drizzle-orm`, `postgres`, `jose`, `@node-rs/argon2`, `server-only`; dev: `drizzle-kit`, `babel-plugin-react-compiler` (bắt buộc cho `reactCompiler: true`), `vitest`, `@playwright/test`, `@axe-core/playwright`.
 - Scripts: `test`, `test:e2e`, `db:generate`, `db:migrate`, `db:seed`, `typecheck`. `.env.example`. Workflow CI.
+- Ghi chú triển khai: `@playwright/test` ghim `1.63.0` (+ `overrides.playwright-core`) để khớp trình duyệt; e2e chạy cả 3 thiết bị trên Chromium. `@types/node` ^22 (Vitest 5 yêu cầu). `postgres` dùng nhánh 3.x (4.0 vừa ra, chờ ổn định).
 - **Chấp nhận:** trang `/` hiển thị placeholder tối; lint/typecheck/CI xanh.
 
 ### M1 — Domain lõi thuần + test (≈ 1–2 ngày)

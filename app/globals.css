@@ -1,54 +1,57 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(html.dark, html.dark *));
-
-:root,
-html.dark {
+/* Chỉ giao diện tối (BLUEPRINT §9.1). */
+:root {
   --bg: #000000;
-  --surface: #1d1d1f;
+  --surface: #1c1c1e;
   --elevated: #2c2c2e;
+  --line: rgba(255, 255, 255, 0.1);
   --text: #f5f5f7;
   --secondary: #a1a1a6;
+  --tertiary: #6e6e73;
   --accent: #ff3d00;
-  --line: rgba(255, 255, 255, 0.1);
+  /* Chữ trên nền accent: trắng chỉ đạt 3,5:1 (trượt WCAG AA), đen đạt ~5,9:1. */
+  --on-accent: #000000;
+  --accent-glow: color-mix(in srgb, #ff3d00 22%, transparent);
+  --live: #30d158;
+  --warn: #ff9f0a;
+  --danger: #ff453a;
   --invert: #ffffff;
   --on-invert: #000000;
   --header: rgba(0, 0, 0, 0.72);
-  --color-scheme: dark;
-}
 
-html.light {
-  --bg: #f5f5f7;
-  --surface: #ffffff;
-  --elevated: #e8e8ed;
-  --text: #1d1d1f;
-  --secondary: #6e6e73;
-  --accent: #ff3d00;
-  --line: rgba(0, 0, 0, 0.08);
-  --invert: #1d1d1f;
-  --on-invert: #ffffff;
-  --header: rgba(245, 245, 247, 0.78);
-  --color-scheme: light;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+
+  color-scheme: dark;
 }
 
 @theme inline {
   --color-bg: var(--bg);
   --color-surface: var(--surface);
   --color-elevated: var(--elevated);
+  --color-line: var(--line);
   --color-text: var(--text);
   --color-secondary: var(--secondary);
+  --color-tertiary: var(--tertiary);
   --color-accent: var(--accent);
-  --color-line: var(--line);
+  --color-on-accent: var(--on-accent);
+  --color-accent-glow: var(--accent-glow);
+  --color-live: var(--live);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
   --color-invert: var(--invert);
   --color-on-invert: var(--on-invert);
   --color-header: var(--header);
   --font-sans: var(--font-be-vietnam);
+  --radius-tile: 28px;
+  --radius-sheet: 32px;
+  --radius-field: 16px;
 }
 
 html {
   scroll-behavior: smooth;
   scroll-padding-top: 6rem;
-  color-scheme: var(--color-scheme);
 }
 
 body {
@@ -61,8 +64,16 @@ body {
   color: var(--text);
 }
 
-input,
-select,
-textarea {
-  color-scheme: inherit;
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

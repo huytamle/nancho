@@ -1,47 +1,23 @@
-import { copy } from "@/data/i18n";
-import { menu } from "@/data/menu";
 import { site } from "@/data/site";
 
+// TODO(M6): bổ sung hasMenu từ catalog, địa chỉ bếp Rêu, potentialAction OrderAction.
 export function JsonLd() {
-  const vi = copy.vi;
   const data = {
     "@context": "https://schema.org",
     "@type": "Restaurant",
     name: site.name,
     description: site.description,
-    servesCuisine: ["Café specialty", "Pizza", "BBQ", "Loaded fries", "Gelato"],
-    address: {
-      "@type": "PostalAddress",
-      streetAddress: "162 Nguyễn Thuật",
-      addressLocality: "Thăng Bình",
-      addressRegion: "Đà Nẵng",
-      addressCountry: "VN",
-    },
-    telephone: site.phoneHref.replace("tel:", ""),
-    url: "https://theheat.vn",
-    openingHours: "Mo-Su 06:00-21:30",
-    acceptsReservations: true,
-    hasMenu: menu.map((group) => ({
-      "@type": "MenuSection",
-      name: vi.menu.groups[group.id].title,
-      hasMenuItem: group.items.map((item) => ({
-        "@type": "MenuItem",
-        name: vi.menu.items[item.id].name,
-        description: vi.menu.items[item.id].description,
-        image: item.image,
-        offers: {
-          "@type": "Offer",
-          price: item.price,
-          priceCurrency: "VND",
-        },
-      })),
-    })),
+    url: site.url,
+    telephone: site.contact.phoneHref.replace("tel:", ""),
+    servesCuisine: ["Pizza", "BBQ"],
+    areaServed: "Thăng Bình, Đà Nẵng",
+    slogan: site.taglineEn,
   };
 
   return (
     <script
       type="application/ld+json"
-      dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }}
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(data).replace(/</g, "\\u003c") }}
     />
   );
 }

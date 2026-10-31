@@ -1,31 +1,52 @@
+// Thông tin thương hiệu, liên hệ, pháp lý. Giá trị "TODO" chờ chủ quán chốt (BLUEPRINT §16).
+
 export const site = {
-  name: "THE HEAT",
+  name: "THE HEAT PIZZA",
   shortName: "THE HEAT",
-  tagline: "Crafted by fire. Refined by science.",
+  url: "https://theheatpizza.vn",
+  tagline: "Nướng bằng lửa. Chuẩn bằng khoa học.",
+  taglineEn: "Crafted by fire. Refined by science.",
   description:
-    "THE HEAT — quán ăn tại chỗ ở 162 Nguyễn Thuật, xã Thăng Bình, thành phố Đà Nẵng. Café specialty, pizza khay Detroit, BBQ, loaded fries và KOLD Gelato.",
+    "Pan pizza kiểu Mỹ & BBQ sous-vide ở Thăng Bình — nướng theo mẻ, đặt trước mới làm, giao nóng tận nhà hoặc nhận tại Cà phê Rêu.",
   locationLabel: "Thăng Bình · Đà Nẵng",
-  address: "162 Nguyễn Thuật, xã Thăng Bình, thành phố Đà Nẵng",
-  mapsQuery: "162 Nguyễn Thuật, Thăng Bình, Đà Nẵng",
-  mapsEmbedUrl:
-    "https://maps.google.com/maps?q=162%20Nguy%E1%BB%85n%20Thu%E1%BA%ADt%2C%20Th%C4%83ng%20B%C3%ACnh%2C%20%C4%90%C3%A0%20N%E1%BA%B5ng&hl=vi&z=16&output=embed",
-  mapsLink:
-    "https://www.google.com/maps/search/?api=1&query=162+Nguy%E1%BB%85n+Thu%E1%BA%ADt%2C+Th%C4%83ng+B%C3%ACnh%2C+%C4%90%C3%A0+N%E1%BA%B5ng",
-  phoneDisplay: "0922 662 669",
-  phoneHref: "tel:+84922662669",
-  hours: [
-    { days: "Thứ 2 – Chủ nhật", time: "06:00 – 21:30" },
-    { days: "Café", time: "06:00 – 21:30" },
-    { days: "Pizza, BBQ, fries", time: "17:00 – 21:30" },
-  ],
+
+  contact: {
+    phoneDisplay: "0922 662 669",
+    phoneHref: "tel:+84922662669",
+    zaloHref: "https://zalo.me/0922662669",
+  },
+
+  // ✅ Rêu vừa là bếp vừa là điểm nhận. ⏳ Còn chờ địa chỉ & toạ độ.
+  kitchen: {
+    name: "Cà phê Rêu",
+    address: "TODO: địa chỉ Cà phê Rêu",
+    mapsLink: null as string | null,
+  },
+
+  // Bắt buộc hiển thị ở footer (NĐ 52/2013, sửa đổi bởi NĐ 85/2021). Chặn ra mắt nếu còn TODO.
+  legal: {
+    businessName: "TODO: tên hộ kinh doanh / doanh nghiệp",
+    registrationNo: "TODO: số ĐKKD / MST",
+    email: "TODO: email liên hệ",
+  },
+
   social: {
     facebook: "https://www.facebook.com/theheat.thangbinh",
     instagram: "https://www.instagram.com/theheat.thangbinh",
   },
-  nav: [
-    { href: "#menu", label: "Menu" },
-    { href: "#khong-gian", label: "Không gian" },
-    { href: "#den-quan", label: "Đến quán" },
-    { href: "#dat-ban", label: "Đặt bàn" },
-  ],
+
+  // Quán ăn tại chỗ THE HEAT (café, KOLD Gelato, đặt bàn) — trang /tai-quan.
+  dineIn: {
+    name: "THE HEAT",
+    address: "162 Nguyễn Thuật, xã Thăng Bình, thành phố Đà Nẵng",
+    mapsLink:
+      "https://www.google.com/maps/search/?api=1&query=162+Nguy%E1%BB%85n+Thu%E1%BA%ADt%2C+Th%C4%83ng+B%C3%ACnh%2C+%C4%90%C3%A0+N%E1%BA%B5ng",
+    hours: [
+      { days: "Thứ 2 – Chủ nhật", time: "06:00 – 21:30" },
+      { days: "Café", time: "06:00 – 21:30" },
+    ],
+    // Khung giờ nhận đặt bàn (giờ VN), dùng ở cả form và server action.
+    reservationOpen: "06:00",
+    reservationClose: "21:30",
+  },
 } as const;

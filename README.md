@@ -1,36 +1,31 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# THE HEAT PIZZA — `theheatpizza.vn`
 
-## Getting Started
+Ứng dụng đặt món một trang (mobile-first, giao diện tối) cho mô hình "nướng theo mẻ, đặt trước mới làm".
 
-First, run the development server:
+- Kiến trúc, đặc tả, lộ trình M0–M6: [`docs/BLUEPRINT.md`](docs/BLUEPRINT.md)
+- Marketing: [`docs/MARKETING.md`](docs/MARKETING.md)
+- Quy tắc cho AI Agent: [`AGENTS.md`](AGENTS.md)
+
+## Chạy dự án
+
+Yêu cầu Node.js ≥ 22.12.
 
 ```bash
+npm install
+cp .env.example .env.local   # điền giá trị (từ M2 trở đi)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Lệnh | Việc |
+|---|---|
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `next typegen` + `tsc --noEmit` |
+| `npm test` | Unit test (Vitest) cho `lib/domain` |
+| `npm run build` | Build production |
+| `npm run test:e2e` | E2E (Playwright, cần `npm run build` trước) |
+| `npm run db:generate` / `db:migrate` / `db:seed` | Database (từ M2) |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Route
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `/` — app đặt món (hiện là trang giữ chỗ, M3 sẽ thay)
+- `/tai-quan` — quán ăn tại chỗ THE HEAT: Café, KOLD Gelato, đặt bàn

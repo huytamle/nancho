@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
-import Script from "next/script";
 import { Be_Vietnam_Pro } from "next/font/google";
-import { LanguageProvider } from "@/components/language-provider";
 import { JsonLd } from "@/components/json-ld";
+import { copy } from "@/data/copy";
 import { site } from "@/data/site";
 import "./globals.css";
 
@@ -13,26 +12,23 @@ const beVietnam = Be_Vietnam_Pro({
   display: "swap",
 });
 
-const themeInit = `(function(){try{var t=localStorage.getItem("theheat-theme");if(t==="light"){document.documentElement.classList.add("light");document.documentElement.classList.remove("dark")}else{document.documentElement.classList.add("dark");document.documentElement.classList.remove("light")}var l=localStorage.getItem("theheat-lang");document.documentElement.lang=l==="en"?"en":"vi"}catch(e){document.documentElement.classList.add("dark");document.documentElement.lang="vi"}})();`;
+const title = "THE HEAT PIZZA — Pan pizza kiểu Mỹ & BBQ sous-vide · Thăng Bình";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://theheat.vn"),
+  metadataBase: new URL(site.url),
   title: {
-    default: "THE HEAT – Café, pizza, BBQ & loaded fries tại Thăng Bình",
-    template: "%s · THE HEAT",
+    default: title,
+    template: `%s · ${site.name}`,
   },
   description: site.description,
   keywords: [
-    "THE HEAT",
-    "Thăng Bình",
-    "café specialty",
-    "pizza",
-    "BBQ",
-    "loaded fries",
-    "KOLD Gelato",
-    "gelato",
-    "quán ăn Đà Nẵng",
-    "đặt bàn",
+    "THE HEAT PIZZA",
+    "pizza Thăng Bình",
+    "pan pizza",
+    "BBQ sous-vide",
+    "đặt pizza",
+    "giao pizza Thăng Bình",
+    "Cà phê Rêu",
   ],
   applicationName: site.name,
   authors: [{ name: site.name }],
@@ -40,12 +36,12 @@ export const metadata: Metadata = {
     type: "website",
     locale: "vi_VN",
     siteName: site.name,
-    title: "THE HEAT – Café, pizza, BBQ & loaded fries tại Thăng Bình",
+    title,
     description: site.description,
   },
   twitter: {
     card: "summary_large_image",
-    title: "THE HEAT – Café, pizza, BBQ & loaded fries tại Thăng Bình",
+    title,
     description: site.description,
   },
   robots: { index: true, follow: true },
@@ -53,27 +49,25 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#000000" },
-    { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
-  ],
+  themeColor: "#000000",
+  colorScheme: "dark",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="vi"
-      className={`${beVietnam.variable} dark h-full antialiased`}
-      suppressHydrationWarning
-    >
+    <html lang="vi" className={`${beVietnam.variable} h-full antialiased`}>
       <body className="min-h-full bg-bg font-sans text-text">
-        <Script id="theme-init" strategy="beforeInteractive">
-          {themeInit}
-        </Script>
+        <a
+          href="#noi-dung"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-full focus:bg-invert focus:px-4 focus:py-2 focus:text-on-invert"
+        >
+          {copy.skip}
+        </a>
         <JsonLd />
-        <LanguageProvider>{children}</LanguageProvider>
+        {children}
       </body>
     </html>
   );

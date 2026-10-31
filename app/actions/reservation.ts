@@ -1,99 +1,77 @@
 "use server";
 
-export type FormErrorKey =
-  | "nameShort"
-  | "phoneInvalid"
-  | "guestsRange"
-  | "datetimeRequired"
-  | "datetimeFuture"
-  | "datetimeHours"
-  | "notesLong";
+import * as z from "zod";
+import type { ReservationErrorKey } from "@/data/copy";
+import { site } from "@/data/site";
+import { normalizePhone } from "@/lib/domain/phone";
+import { parseVnLocal, vnTimeLabel } from "@/lib/domain/time";
+
+// TODO(M4): rate-limit theo IP + lưu DB + báo Telegram (hiện chỉ ghi log).
 
 export type ReservationState = {
   ok: boolean;
   status: "" | "success" | "invalid";
-  errors: {
-    name?: FormErrorKey;
-    phone?: FormErrorKey;
-    guests?: FormErrorKey;
-    datetime?: FormErrorKey;
-    notes?: FormErrorKey;
-  };
+  errors: Partial<Record<"name" | "phone" | "guests" | "datetime" | "notes", ReservationErrorKey>>;
 };
 
-const empty: ReservationState = { ok: false, status: "", errors: {} };
+const ReservationInput = z.object({
+  name: z.string().trim().min(2, "nameShort").max(60, "nameShort"),
+  phone: z.string().max(20, "phoneInvalid"),
+  guests: z.coerce.number("guestsRange").int("guestsRange").min(1, "guestsRange").max(20, "guestsRange"),
+  datetime: z.string().trim().min(1, "datetimeRequired"),
+  notes: z.string().trim().max(300, "notesLong"),
+});
 
 function read(formData: FormData, key: string) {
   const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizePhone(raw: string) {
-  return raw.replace(/[\s.\-()]/g, "");
-}
-
-function isPhone(value: string) {
-  return /^(0|\+84)(3|5|7|8|9)\d{8}$/.test(value);
+  return typeof value === "string" ? value : "";
 }
 
 export async function createReservation(
   _prev: ReservationState,
   formData: FormData,
 ): Promise<ReservationState> {
-  const name = read(formData, "name");
-  const phone = normalizePhone(read(formData, "phone"));
-  const guestsRaw = read(formData, "guests");
-  const datetime = read(formData, "datetime");
-  const notes = read(formData, "notes");
+  const parsed = ReservationInput.safeParse({
+    name: read(formData, "name"),
+    phone: read(formData, "phone"),
+    guests: read(formData, "guests"),
+    datetime: read(formData, "datetime"),
+    notes: read(formData, "notes"),
+  });
 
   const errors: ReservationState["errors"] = {};
-
-  if (name.length < 2) {
-    errors.name = "nameShort";
-  }
-
-  if (!isPhone(phone)) {
-    errors.phone = "phoneInvalid";
-  }
-
-  const guests = Number(guestsRaw);
-  if (!Number.isInteger(guests) || guests < 1 || guests > 20) {
-    errors.guests = "guestsRange";
-  }
-
-  if (!datetime) {
-    errors.datetime = "datetimeRequired";
-  } else {
-    const when = new Date(datetime);
-    if (Number.isNaN(when.getTime()) || when.getTime() < Date.now() - 60_000) {
-      errors.datetime = "datetimeFuture";
-    } else {
-      const hour = when.getHours();
-      if (hour < 6 || hour > 21 || (hour === 21 && when.getMinutes() > 30)) {
-        errors.datetime = "datetimeHours";
-      }
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0] as keyof ReservationState["errors"];
+      errors[field] ??= issue.message as ReservationErrorKey;
     }
   }
 
-  if (notes.length > 300) {
-    errors.notes = "notesLong";
+  const phone = normalizePhone(read(formData, "phone"));
+  if (!phone) errors.phone ??= "phoneInvalid";
+
+  const when = parsed.success ? parseVnLocal(parsed.data.datetime) : null;
+  if (parsed.success && !errors.datetime) {
+    if (!when || when.getTime() < Date.now() - 60_000) {
+      errors.datetime = "datetimeFuture";
+    } else {
+      const hhmm = vnTimeLabel(when);
+      const { reservationOpen, reservationClose } = site.dineIn;
+      if (hhmm < reservationOpen || hhmm > reservationClose) errors.datetime = "datetimeHours";
+    }
   }
 
-  if (Object.keys(errors).length > 0) {
+  if (!parsed.success || Object.keys(errors).length > 0) {
     return { ok: false, status: "invalid", errors };
   }
 
   console.info("[THE HEAT] Đặt bàn", {
-    name,
+    name: parsed.data.name,
     phone,
-    guests,
-    datetime,
-    notes: notes || undefined,
+    guests: parsed.data.guests,
+    at: when!.toISOString(),
+    notes: parsed.data.notes || undefined,
   });
 
-  return {
-    ...empty,
-    ok: true,
-    status: "success",
-  };
+  return { ok: true, status: "success", errors: {} };
 }

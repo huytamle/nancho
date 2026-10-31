@@ -8,14 +8,7 @@ export function KoldLogo({ className = "" }: { className?: string }) {
         alt="KOLD Gelato"
         width={640}
         height={360}
-        className="hidden h-24 w-auto max-w-sm object-contain object-left sm:h-28 dark:block"
-      />
-      <Image
-        src="/images/brand/kold-lockup-light.jpg"
-        alt="KOLD Gelato"
-        width={640}
-        height={360}
-        className="block h-24 w-auto max-w-sm object-contain object-left sm:h-28 dark:hidden"
+        className="h-24 w-auto max-w-sm object-contain object-left sm:h-28"
       />
     </span>
   );

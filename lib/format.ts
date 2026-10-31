@@ -1,12 +1,6 @@
-import type { Lang } from "@/data/i18n";
+const vnd = new Intl.NumberFormat("vi-VN");
 
-export function formatPrice(amount: number, lang: Lang = "vi") {
-  if (lang === "en") {
-    return `${new Intl.NumberFormat("en-US").format(amount)} VND`;
-  }
-  return `${new Intl.NumberFormat("vi-VN").format(amount)}đ`;
-}
-
-export function formatVnd(amount: number) {
-  return formatPrice(amount, "vi");
+/** 159000 → "159.000đ". Tiền luôn là số nguyên VND. */
+export function formatPrice(amount: number) {
+  return `${vnd.format(amount)}đ`;
 }
