@@ -20,6 +20,7 @@ import { priceOrder } from "@/lib/domain/pricing";
 import { vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
 import { checkFields, type FieldErrors, type FieldKey, type LookupResult, type PlaceOrderResult } from "@/lib/order-contract";
+import { track } from "@/lib/client/analytics";
 
 const t = copy.checkout;
 const MIN_FILL_MS = 3000; // server từ chối đơn điền < 3 giây (chống bot) → client tự chờ cho đủ.
@@ -72,6 +73,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
       if (lookupPhone.current !== phone) return;
       setLookup(res);
       if (res.status === "new") return;
+      track("lookup_known", { device: res.status });
       const cur = getCart().draft;
       const patch: Partial<Draft> = {};
       if (!cur.name.trim()) patch.name = res.status === "self" ? res.name : res.greetingName;
@@ -215,6 +217,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         idem.current = null;
         dispatch({ type: "placed" });
         setSuccess(res);
+        track("place_order", { total: res.total, payment: res.payment.method, status: res.status });
         navigator.vibrate?.(20);
         void refreshOven();
         return;
@@ -227,7 +230,10 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         set({ paymentMethod: "transfer" });
       }
       setFailure({ ...res, at: target.readyLabel });
-      if (res.reason === "slot_full" || res.reason === "cutoff_passed") void refreshOven();
+      if (res.reason === "slot_full" || res.reason === "cutoff_passed") {
+        track("slot_full", { reason: res.reason });
+        void refreshOven();
+      }
       navigator.vibrate?.([12, 60, 12]);
     });
   }
@@ -519,6 +525,13 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
           <input type="checkbox" checked={d.remember} onChange={(e) => set({ remember: e.target.checked })} className="size-5 accent-[var(--accent)]" />
           {t.remember}
         </label>
+        <p className="text-xs text-secondary">
+          {t.policyPrefix}{" "}
+          <a href="/chinh-sach" target="_blank" className="underline underline-offset-4 hover:text-text">
+            {t.policyLink}
+          </a>
+          .
+        </p>
       </div>
 
       {/* Honeypot — người thật không thấy */}

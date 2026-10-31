@@ -3,6 +3,7 @@
 
 import { useSyncExternalStore } from "react";
 import { vnDateOf, type ISODate } from "@/lib/domain/time";
+import { track } from "@/lib/client/analytics";
 
 export type CartAddon = { productId: string; qty: number };
 export type CartItem = {
@@ -137,6 +138,7 @@ function current(): CartState {
 
 export function dispatch(action: CartAction) {
   state = cartReducer(current(), action);
+  if (action.type === "add") track("add_to_cart", { item: action.item.productId, qty: action.item.qty });
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {}

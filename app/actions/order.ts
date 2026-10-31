@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { after } from "next/server";
 import * as z from "zod";
 import { normalizePhone } from "@/lib/domain/phone";
+import { cleanSource, SRC_COOKIE } from "@/lib/source";
 import type { CancelResult, PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
 import { serverNow } from "@/lib/server/clock";
 import { CUSTOMER_COOKIE, rememberCookieOptions, signRemember } from "@/lib/server/customer-cookie";
@@ -43,10 +44,11 @@ export async function placeOrder(raw: PlaceOrderInput): Promise<PlaceOrderResult
     );
     if (!allowed) return { ok: false, reason: "rate_limited" };
 
-    const { result, created } = await placeOrderCore(input, phone, { now, catalog: await getCatalog() });
+    const jar = await cookies();
+    const source = cleanSource(jar.get(SRC_COOKIE)?.value);
+    const { result, created } = await placeOrderCore(input, phone, { now, catalog: await getCatalog(), source });
     if (!created || !result.ok) return result;
 
-    const jar = await cookies();
     if (input.customer.remember) jar.set(CUSTOMER_COOKIE, signRemember(created.customerId, now), rememberCookieOptions);
     else jar.delete(CUSTOMER_COOKIE);
 

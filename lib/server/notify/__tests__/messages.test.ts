@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { almostFullText, cancelledText, newOrderText } from "@/lib/server/notify/messages";
+import { almostFullText, cancelledText, newOrderText, paymentText } from "@/lib/server/notify/messages";
 
 describe("tin Telegram (§11.3)", () => {
   it("đơn mới: một dòng tóm tắt + cảnh báo khách mới", () => {
@@ -41,5 +41,18 @@ describe("tin Telegram (§11.3)", () => {
     expect(cancelledText({ seq: 12, readyLabel: "18:00", dayLabel: "", units: 2 })).toBe("❌ #12 huỷ bởi khách · trả 2 suất mẻ 18:00");
     expect(cancelledText({ seq: 1, readyLabel: "18:00", dayLabel: "Mai", units: 1 })).toBe("❌ #1 huỷ bởi khách · trả 1 suất mẻ 18:00 Mai");
     expect(almostFullText({ readyLabel: "18:00", dayLabel: "" })).toBe("🔥 Mẻ 18:00 còn 1 suất");
+  });
+});
+
+describe("tin thanh toán SePay (§11.2)", () => {
+  it("đủ / thiếu / dư / không khớp", () => {
+    expect(paymentText({ kind: "paid", seq: 12, amount: 458000 })).toBe("💰 #12 đã chuyển khoản 458.000đ");
+    expect(paymentText({ kind: "partial", seq: 12, amount: 200000, received: 200000, total: 458000 })).toBe(
+      "⚠ #12 chuyển thiếu: nhận 200.000đ · tổng đã nhận 200.000đ/458.000đ — gọi khách",
+    );
+    expect(paymentText({ kind: "extra", seq: 3, amount: 1000, status: "cancelled" })).toContain("đã huỷ");
+    expect(paymentText({ kind: "unmatched", amount: 50000, content: "chuyen tien" })).toBe(
+      '⚠ Tiền về 50.000đ không khớp đơn nào · "chuyen tien" — đối chiếu rồi bấm [Đã trả] trên đơn trong dashboard',
+    );
   });
 });

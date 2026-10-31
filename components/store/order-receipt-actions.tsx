@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 import { cancelOrderByToken } from "@/app/actions/order";
 import { copy } from "@/data/copy";
+import { track } from "@/lib/client/analytics";
 import { dispatch } from "@/lib/client/cart-store";
 import type { OrderView } from "@/lib/server/dal/orders";
 
@@ -44,6 +45,7 @@ export function CancelOrder({ token, cutoffLabel }: { token: string; cutoffLabel
         res = { ok: false as const, reason: "not_found" as const };
       }
       if (res.ok) {
+        track("cancel_order");
         navigator.vibrate?.(20);
         router.refresh();
         return;
@@ -95,24 +97,6 @@ export function Reorder({ lines }: { lines: OrderView["reorder"] }) {
       className="inline-flex h-12 items-center justify-center rounded-full bg-accent font-semibold text-on-accent"
     >
       {t.reorder}
-    </button>
-  );
-}
-
-export function CopyText({ text, label, done }: { text: string; label: string; done: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          setCopied(true);
-        } catch {}
-      }}
-      className="mt-3 min-h-11 rounded-full bg-bg px-4 text-sm font-medium"
-    >
-      {copied ? done : label}
     </button>
   );
 }

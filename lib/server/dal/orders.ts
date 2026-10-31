@@ -9,12 +9,14 @@ import { priceOrder, requiresPrepay, type CartLine, type PricedItem } from "@/li
 import { vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
 import type { Channel, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/domain/types";
 import type { PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
+import type { TransferInfo } from "@/lib/payments";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import type { Catalog } from "@/lib/server/dal/catalog";
 import { findCustomerByPhone, resolveSavedAddress } from "@/lib/server/dal/customers";
 import { getOvenSnapshot } from "@/lib/server/dal/schedule";
 import { loadSettings } from "@/lib/server/dal/settings";
+import { transferFor } from "@/lib/server/payments/vietqr";
 import { almostFullText, cancelledText, newOrderText } from "@/lib/server/notify/messages";
 
 // Đặt đơn thật (§8.1) & huỷ đơn bằng token. Server Action chỉ lo parse/rate-limit/cookie/after();
@@ -31,7 +33,7 @@ export type PlaceOrderOutcome = {
 /** Đơn do nhân viên nhập ("Thêm đơn nhanh", §10.4): đã nói chuyện với khách → xác nhận luôn, không Telegram. */
 export type StaffEntry = { actor: string; channel: Channel; overrideCutoff: boolean };
 
-export type PlaceOrderCtx = { now: Date; catalog: Catalog; db?: Db; staff?: StaffEntry };
+export type PlaceOrderCtx = { now: Date; catalog: Catalog; db?: Db; staff?: StaffEntry; /** Kênh marketing từ cookie `th_src`. */ source?: string | null };
 
 const trackingToken = () => randomBytes(16).toString("base64url"); // 128 bit → 22 ký tự
 
@@ -68,7 +70,7 @@ function successOf(
     payment:
       o.paymentMethod === "cod"
         ? { method: "cod" }
-        : { method: "transfer", qrUrl: "", memo: transferMemo(o.serviceDate, o.seq), amount: o.total },
+        : { method: "transfer", ...transferFor(o.total, transferMemo(o.serviceDate, o.seq)) },
   };
 }
 
@@ -240,6 +242,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
           paymentMethod: input.paymentMethod,
           status,
           note: input.note || null,
+          source: staff ? null : (ctx.source ?? null),
           trackingToken: trackingToken(),
           idempotencyKey: input.idempotencyKey,
           createdAt: now,
@@ -447,7 +450,7 @@ export type OrderView = {
   shipFee: number;
   discount: number;
   total: number;
-  payment: { method: PaymentMethod; status: PaymentStatus; memo: string };
+  payment: { method: PaymentMethod; status: PaymentStatus; memo: string; transfer: TransferInfo };
 };
 
 export async function getOrderView(token: string, now: Date, db: Executor = getDb()): Promise<OrderView | null> {
@@ -500,6 +503,11 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
     shipFee: o.shipFee,
     discount: o.discount,
     total: o.total,
-    payment: { method: o.paymentMethod, status: o.paymentStatus, memo: transferMemo(o.serviceDate, o.seq) },
+    payment: {
+      method: o.paymentMethod,
+      status: o.paymentStatus,
+      memo: transferMemo(o.serviceDate, o.seq),
+      transfer: transferFor(o.total, transferMemo(o.serviceDate, o.seq)),
+    },
   };
 }

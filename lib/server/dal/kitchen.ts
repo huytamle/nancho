@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lt, or, sql } from "drizzle-orm";
 import { buildPrepReport, type PrepReport } from "@/lib/domain/prep";
 import { addDays, vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
 import type {
@@ -15,6 +15,7 @@ import type {
   PaymentStatus,
 } from "@/lib/domain/types";
 import { prepSummaryText } from "@/lib/kitchen-text";
+import { ORDER_ADDRESS_RETENTION_DAYS } from "@/lib/privacy";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { ensureBatches } from "@/lib/server/dal/schedule";
@@ -273,7 +274,12 @@ export function prepText(day: Pick<KitchenDay, "prep" | "batches" | "dayLabel" |
 
 // ── Cron hằng ngày (§5.4) ──
 
-export type DailyResult = { created: { days: number; batches: number }; summarySent: boolean; rateLimitsDeleted: number };
+export type DailyResult = {
+  created: { days: number; batches: number };
+  summarySent: boolean;
+  rateLimitsDeleted: number;
+  addressesAnonymized: number;
+};
 
 /**
  * Sinh mẻ cho hôm nay … +daysAhead, dọn rate_limits cũ, và gửi Bảng Tổng Hợp **một lần** sau giờ chốt muộn nhất
@@ -287,6 +293,17 @@ export async function runDaily(now: Date, send: (text: string) => Promise<boolea
     .delete(t.rateLimits)
     .where(lt(t.rateLimits.windowStart, new Date(now.getTime() - 2 * 86_400_000)))
     .returning({ key: t.rateLimits.key });
+  // Ẩn danh địa chỉ trên đơn cũ (địa chỉ khách bật "Ghi nhớ" nằm ở bảng addresses, không bị ảnh hưởng).
+  const anonymized = await db
+    .update(t.orders)
+    .set({ addressText: null, lat: null, lng: null })
+    .where(
+      and(
+        lt(t.orders.serviceDate, addDays(today, -ORDER_ADDRESS_RETENTION_DAYS)),
+        or(isNotNull(t.orders.addressText), isNotNull(t.orders.lat)),
+      ),
+    )
+    .returning({ id: t.orders.id });
 
   let summarySent = false;
   const [{ last } = { last: null }] = await db
@@ -305,5 +322,5 @@ export async function runDaily(now: Date, send: (text: string) => Promise<boolea
       if (!summarySent) await db.update(t.serviceDays).set({ summarySentAt: null }).where(eq(t.serviceDays.date, today));
     }
   }
-  return { created, summarySent, rateLimitsDeleted: deleted.length };
+  return { created, summarySent, rateLimitsDeleted: deleted.length, addressesAnonymized: anonymized.length };
 }

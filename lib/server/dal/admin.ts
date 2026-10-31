@@ -3,7 +3,7 @@ import { and, eq, inArray, lte, sql } from "drizzle-orm";
 import { canTransition, releasesCapacity, type StaffRole } from "@/lib/domain/order-status";
 import type { ISODate } from "@/lib/domain/time";
 import type { DayStatus, OrderStatus, PaymentMethod } from "@/lib/domain/types";
-import { getDb, type Db } from "@/lib/server/db/client";
+import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 
 // Thao tác của Kitchen Dashboard (§8.2, §10). Server Action lo zod + requireStaff; nghiệp vụ ở đây để
@@ -108,28 +108,40 @@ export async function advanceBatchCore(batchId: number, to: "baking" | "ready", 
   return { updated: res.updated.length, unconfirmed: waiting };
 }
 
-/** Đánh dấu đã trả tiền (owner). Ghi payments (manual, idempotent) và tự xác nhận đơn `placed` (§7.5). */
+/**
+ * Ghi nhận đơn đã trả đủ (trong transaction đang khoá dòng đơn): `paid` + event, tự xác nhận đơn `placed` (§7.5).
+ * Dùng chung cho [Đã trả] của owner và webhook SePay.
+ */
+export async function settlePaid(
+  tx: Executor,
+  o: Pick<t.Order, "id" | "status" | "total">,
+  p: { method: PaymentMethod; actor: string; amount: number; now: Date; data?: Record<string, unknown> },
+) {
+  const confirm = o.status === "placed";
+  await tx
+    .update(t.orders)
+    .set({ paymentStatus: "paid", paymentMethod: p.method, updatedAt: p.now, ...(confirm ? { status: "confirmed" as const } : {}) })
+    .where(eq(t.orders.id, o.id));
+  await tx.insert(t.orderEvents).values([
+    { orderId: o.id, type: "paid", actor: p.actor, data: { method: p.method, amount: p.amount, ...p.data }, createdAt: p.now },
+    ...(confirm
+      ? [{ orderId: o.id, type: "status_changed" as const, actor: "system", data: { from: "placed", to: "confirmed" }, createdAt: p.now }]
+      : []),
+  ]);
+}
+
+/** Đánh dấu đã trả tiền (owner). Ghi payments (manual, idempotent) rồi `settlePaid`. */
 export async function markPaidCore(orderId: string, method: PaymentMethod, ctx: Ctx) {
   const db = ctx.db ?? getDb();
   return db.transaction(async (tx) => {
     const [o] = await tx.select().from(t.orders).where(eq(t.orders.id, orderId)).limit(1).for("update");
     if (!o) return { ok: false as const, reason: "not_found" as const };
     if (o.paymentStatus === "paid") return { ok: true as const };
-    const confirm = o.status === "placed";
-    await tx
-      .update(t.orders)
-      .set({ paymentStatus: "paid", paymentMethod: method, updatedAt: ctx.now, ...(confirm ? { status: "confirmed" as const } : {}) })
-      .where(eq(t.orders.id, orderId));
     await tx
       .insert(t.payments)
       .values({ orderId, provider: "manual", providerTxnId: `manual:${orderId}`, amount: o.total, createdAt: ctx.now })
       .onConflictDoNothing();
-    await tx.insert(t.orderEvents).values([
-      { orderId, type: "paid", actor: tag(ctx.actor), data: { method, amount: o.total }, createdAt: ctx.now },
-      ...(confirm
-        ? [{ orderId, type: "status_changed" as const, actor: "system", data: { from: "placed", to: "confirmed" }, createdAt: ctx.now }]
-        : []),
-    ]);
+    await settlePaid(tx, o, { method, actor: tag(ctx.actor), amount: o.total, now: ctx.now });
     return { ok: true as const };
   });
 }

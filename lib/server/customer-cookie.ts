@@ -1,11 +1,12 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { REMEMBER_DAYS } from "@/lib/privacy";
 
 // Token ký HMAC cho khách (§7.7): cookie "ghi nhớ" `th_c` (180 ngày) và `savedAddressToken` (30 phút).
 // Dạng `<payload base64url>.<sig base64url>`; `purpose` nằm trong chữ ký → không dùng lẫn token loại này cho loại kia.
 
 export const CUSTOMER_COOKIE = "th_c";
-export const REMEMBER_DAYS = 180;
+export { REMEMBER_DAYS };
 const ADDRESS_TTL_SEC = 30 * 60;
 
 const DEV_SECRET = "dev-only-customer-cookie-secret-change-me";

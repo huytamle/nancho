@@ -56,6 +56,7 @@
 7. **Không thêm trang/route ngoài danh sách ở §5.4.** Sản phẩm là *ứng dụng đặt món một trang*, không phải website nhiều trang.
 8. **Mobile-first thật sự:** dựng & kiểm tra ở viewport 390×844 trước, sau đó mới desktop.
 9. Không thêm thư viện ngoài danh sách §5.2 nếu không ghi lý do vào PR.
+10. **Ưu tiên tái sử dụng:** chức năng đã có lời giải ổn (GitHub, StackOverflow, tài liệu chính thức, gói npm có uy tín & còn bảo trì) thì lấy lại và ghi nguồn; không có mới tự code.
 
 **Definition of Done cho mỗi ticket**
 
@@ -353,6 +354,7 @@ docs/BLUEPRINT.md  docs/MARKETING.md
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | ✅ | Bot & nhóm "Bếp The Heat" |
 | `CRON_SECRET` | ✅ | Bảo vệ `/api/cron/*` |
 | `VIETQR_BANK_BIN`, `VIETQR_ACCOUNT_NO`, `VIETQR_ACCOUNT_NAME` | ✅ (M6) | Tài khoản nhận tiền |
+| `VIETQR_BANK_NAME` | tuỳ chọn | Tên ngân hàng hiện cạnh số TK |
 | `SEPAY_WEBHOOK_KEY` | M6 | Xác thực webhook |
 | `NEXT_SERVER_ACTIONS_ENCRYPTION_KEY` | Phương án B | Khoá cố định khi tự host nhiều instance |
 
@@ -1241,9 +1243,10 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** với dữ liệu Phụ lục B, tab Chuẩn bị hiển thị đúng §10.2; thao tác hàng loạt đổi trạng thái đúng `canTransition`; shipper chỉ thấy tab Giao.
 - Ghi chú triển khai: phiên = JWT HS256 (`jose`, cookie `th_s`, 30 ngày, đồng hồ thật — không theo `TEST_NOW`); `requireStaff()` đọc lại nhân viên trong DB mỗi request (khoá/đổi quyền có hiệu lực ngay). `proxy.ts` không đẩy `/admin/login` → dashboard khi có cookie (tránh vòng lặp với cookie hết hạn); trang login tự redirect nếu phiên hợp lệ. `admin/layout.tsx` **không** đọc phiên (login nằm dưới nó) — mỗi page gọi `requireStaff()` trong `<Suspense>`. Nhân viên & PIN: `npm run staff -- "Tên" owner|kitchen|shipper 123456` (argon2id); khoá = `is_active=false` trong Table Editor. Nghiệp vụ ở `lib/server/dal/admin.ts` (mutation) và `dal/kitchen.ts` (đọc ngày bếp + `runDaily`); văn bản Telegram/Copy/shipper/bài đăng ở `lib/kitchen-text.ts` (thuần, có test). `PrepWarning` thêm `seq`. Đơn nhanh dùng lại `placeOrderCore` với `staff` (kênh, actor, `overrideCutoff` chỉ owner — nhận cả mẻ `closed` sau giờ chốt, sức chứa vẫn giữ): xác nhận luôn, bỏ chặn/trả trước, không Telegram. Đổi mẻ chỉ trong cùng ngày, đơn chưa vào lò. `markPaid` ghi `payments` (`manual:<orderId>`) và tự xác nhận đơn `placed`. [Đút lò] chuyển batch → `baking` (đóng nhận đơn), [Ra lò] → `done`. Cron: `vercel.json` 08:45 UTC (15:45 VN); gửi bảng một lần nhờ `UPDATE … WHERE summary_sent_at IS NULL`, gửi lỗi thì nhả để lần sau thử lại; dọn `rate_limits` > 2 ngày. Cài đặt trong app: trạng thái ngày, sức chứa/đóng-mở mẻ, "Hết hôm nay", Tạo bài đăng; **chưa** làm trong app: mẫu khung giờ, khu vực/phí ship, nhân viên (Table Editor/script), kéo-thả thứ tự điểm giao, phân tuyến cho từng shipper (shipper thấy mọi tuyến). Bản in `?kho=80` cho giấy nhiệt.
 
-### M6 — Thanh toán, SEO, PWA, hoàn thiện (≈ 2 ngày)
+### M6 — Thanh toán, SEO, PWA, hoàn thiện (≈ 2 ngày) ✅
 - VietQR, webhook SePay, trả trước theo rủi ro, `/m/[slug]` + OG, JSON-LD, manifest, sitemap/robots, analytics + `?src=`, `/chinh-sach`, `instrumentation.ts`.
 - **Chấp nhận:** chuyển khoản thử → đơn tự `paid` + Telegram; Lighthouse mobile ≥ 95 Performance/100 Accessibility/100 SEO.
+- Ghi chú triển khai: thuần ở `lib/payments.ts` (link VietQR, zod payload SePay), env ở `lib/server/payments/vietqr.ts`, đối soát ở `lib/server/payments/sepay.ts` (`recordSepayCore`). `payments.provider_txn_id = "sepay:<id>"` (UNIQUE → SePay gửi lại/song song chỉ ghi một lần). Dò mã đơn trong `code + content + description`; **cộng mọi khoản SePay của đơn** ≥ `total` → `settlePaid` (dùng chung với [Đã trả]: `paid`, `payment_method = transfer`, tự xác nhận `placed`); thiếu → Telegram "chuyển thiếu"; đơn đã trả/đã huỷ → "kiểm tra hoàn tiền"; không khớp → `order_id null` + Telegram. Tiền ra (`out`) bỏ qua. Lỗi DB → 500 để SePay thử lại. Khối CK dùng chung `components/store/transfer-box.tsx` (màn thành công + `/o/[token]`): QR, STK, chủ TK, [Lưu mã QR] (mở ảnh — `download` không chạy với ảnh khác origin), [Sao chép STK], [Sao chép nội dung]. `/m/[slug]` = `StorePage` dùng chung với `/`, sheet đọc món từ đường dẫn (`productFromPath`), mở/đóng sheet trên `/m/*` đưa URL về `/`. OG từng món: font Be Vietnam Pro (OFL, `assets/og/`, lấy từ `@fontsource`). `?src=`: `proxy.ts` (matcher chỉ khi có query `src`) ghi cookie `th_src` 30 ngày (không httpOnly) → `orders.source`; analytics `@vercel/analytics` (chỉ render khi `VERCEL`), `beforeSend` che token `/o/<token>`. `instrumentation.ts` gửi Telegram ≤ 1 tin/phút/instance. Cron daily thêm: xoá `address_text/lat/lng` của đơn > 90 ngày (thời hạn ở `lib/privacy.ts`, trang `/chinh-sach` đọc cùng hằng số).
 
 ### Giai đoạn 2 (sau ra mắt, theo dữ liệu thật)
 Suất muộn từ đế dự phòng · Danh sách chờ khi kín lò · Tồn kho theo ngày (`day_stock`) cho túi BBQ · Ship chung tuyến · Tem tích điểm & giới thiệu bạn · Zalo ZNS · Nhãn in dán hộp · Link bàn giao cho Rêu có token (xem không cần đăng nhập) · Báo cáo tuần (doanh thu, tỉ lệ lấp đầy lò, khách quay lại, hiệu quả từng `src`).

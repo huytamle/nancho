@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
-import { JsonLd } from "@/components/json-ld";
+import { Analytics } from "@/components/analytics";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
 import "./globals.css";
@@ -45,6 +45,9 @@ export const metadata: Metadata = {
     description: site.description,
   },
   robots: { index: true, follow: true },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: site.shortName, statusBarStyle: "black-translucent" },
+  formatDetection: { telephone: false },
   alternates: { canonical: "/" },
 };
 
@@ -66,8 +69,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         >
           {copy.skip}
         </a>
-        <JsonLd />
         {children}
+        {process.env.VERCEL ? <Analytics /> : null}
       </body>
     </html>
   );

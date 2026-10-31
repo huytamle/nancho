@@ -94,6 +94,7 @@ export function ProductTile({ product, shape, preload = false }: { product: Stor
         alt={product.name}
         fill
         preload={preload}
+        fetchPriority={preload ? "high" : undefined}
         sizes={SHAPE[shape].sizes}
         className={`object-cover transition duration-500 ease-[var(--ease-out)] group-hover:scale-[1.04] ${blocked ? "grayscale-[60%] opacity-70" : ""}`}
       />

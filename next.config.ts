@@ -26,6 +26,10 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   cacheComponents: true,
   reactCompiler: true,
+  // Ảnh OG từng món đọc font + ảnh món bằng fs (đường dẫn động → tracing không tự thấy).
+  outputFileTracingIncludes: {
+    "/m/[slug]/opengraph-image": ["./assets/og/**", "./public/images/**"],
+  },
   images: {
     formats: ["image/avif", "image/webp"],
   },

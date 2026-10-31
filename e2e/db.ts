@@ -16,6 +16,7 @@ const db = () => {
 
 export async function resetOrders() {
   const s = db();
+  await s`DELETE FROM payments`;
   await s`DELETE FROM orders`;
   await s`DELETE FROM customers`;
   await s`DELETE FROM rate_limits`;
@@ -32,6 +33,12 @@ export async function setUsedPan(hhmm: string, usedPan: number) {
 export async function orderStatus(code: string) {
   const [row] = await db()<{ status: string }[]>`SELECT status FROM orders WHERE code = ${code}`;
   return row?.status ?? null;
+}
+
+export async function orderRow(code: string) {
+  const [row] = await db()<{ status: string; payment_status: string; source: string | null; total: number; seq: number }[]>`
+    SELECT status, payment_status, source, total, seq FROM orders WHERE code = ${code}`;
+  return row ?? null;
 }
 
 export async function closeDb() {

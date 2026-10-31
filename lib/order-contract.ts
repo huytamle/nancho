@@ -3,6 +3,7 @@
 import type { CheckoutErrorKey } from "@/data/copy";
 import type { SlotView } from "@/lib/domain/oven-status";
 import { normalizePhone } from "@/lib/domain/phone";
+import type { TransferInfo } from "@/lib/payments";
 
 export type PlaceOrderInput = {
   idempotencyKey: string;
@@ -39,7 +40,7 @@ export type PlaceOrderResult =
       cutoffLabel: string;
       total: number;
       status: "placed" | "confirmed";
-      payment: { method: "cod" } | { method: "transfer"; qrUrl: string; memo: string; amount: number };
+      payment: { method: "cod" } | ({ method: "transfer" } & TransferInfo);
     }
   | { ok: false; reason: "invalid"; fieldErrors: FieldErrors }
   | { ok: false; reason: "slot_full" | "cutoff_passed"; alternatives: SlotView[] }

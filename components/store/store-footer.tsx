@@ -45,7 +45,10 @@ export function StoreFooter({ pickup }: { pickup: PickupPoint | null }) {
 
       <p className="mt-4 border-t border-line pt-4 text-xs leading-relaxed">
         {copy.footer.legal}: {site.legal.businessName} · {site.legal.registrationNo} · {site.legal.email}
-        <br />© {site.name}
+        <br />© {site.name} ·{" "}
+        <Link href="/chinh-sach" className="underline underline-offset-4 hover:text-text">
+          {t.policy}
+        </Link>
       </p>
     </footer>
   );

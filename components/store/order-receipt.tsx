@@ -1,4 +1,5 @@
-import { CancelOrder, CopyText, LiveRefresh, Reorder } from "@/components/store/order-receipt-actions";
+import { CancelOrder, LiveRefresh, Reorder } from "@/components/store/order-receipt-actions";
+import { TransferBox } from "@/components/store/transfer-box";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
 import type { CustomerStage } from "@/lib/domain/order-status";
@@ -103,18 +104,7 @@ export function OrderReceipt({ token, view: v }: { token: string; view: OrderVie
         </p>
       </section>
 
-      {unpaidTransfer ? (
-        <section className="rounded-tile bg-elevated p-4 text-sm">
-          <p className="font-semibold">{copy.success.transferTitle}</p>
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-            <dt className="text-secondary">{copy.success.amount}</dt>
-            <dd className="font-semibold tabular-nums">{formatPrice(v.total)}</dd>
-            <dt className="text-secondary">{copy.success.memo}</dt>
-            <dd className="font-semibold tracking-wider">{v.payment.memo}</dd>
-          </dl>
-          <CopyText text={v.payment.memo} label={copy.success.copyMemo} done={copy.success.copied} />
-        </section>
-      ) : null}
+      {unpaidTransfer ? <TransferBox info={v.payment.transfer} /> : null}
 
       <div className="flex flex-col gap-2">
         {v.stage === "completed" ? <Reorder lines={v.reorder} /> : null}

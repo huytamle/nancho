@@ -1,17 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
-import { formatPrice } from "@/lib/format";
+import { TransferBox } from "@/components/store/transfer-box";
 import type { PlaceOrderResult } from "@/lib/order-contract";
 
 const t = copy.success;
 
 /** Màn thành công trong cùng sheet (§9.8). */
 export function OrderSuccess({ result, onDone }: { result: Extract<PlaceOrderResult, { ok: true }>; onDone: () => void }) {
-  const [copied, setCopied] = useState(false);
   const pay = result.payment;
 
   return (
@@ -26,33 +24,7 @@ export function OrderSuccess({ result, onDone }: { result: Extract<PlaceOrderRes
       </p>
       <p className="mt-1 text-sm text-secondary tabular-nums">{result.code}</p>
 
-      {pay.method === "transfer" ? (
-        <div className="mt-5 w-full rounded-tile bg-elevated p-4 text-left">
-          <p className="text-sm font-semibold">{t.transferTitle}</p>
-          {pay.qrUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- ảnh QR động từ img.vietqr.io (M6)
-            <img src={pay.qrUrl} alt="" width={240} height={240} className="mx-auto mt-3 rounded-2xl bg-white p-2" />
-          ) : null}
-          <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-            <dt className="text-secondary">{t.amount}</dt>
-            <dd className="font-semibold tabular-nums">{formatPrice(pay.amount)}</dd>
-            <dt className="text-secondary">{t.memo}</dt>
-            <dd className="font-semibold tracking-wider">{pay.memo}</dd>
-          </dl>
-          <button
-            type="button"
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(pay.memo);
-                setCopied(true);
-              } catch {}
-            }}
-            className="mt-3 min-h-11 rounded-full bg-bg px-4 text-sm font-medium"
-          >
-            {copied ? t.copied : t.copyMemo}
-          </button>
-        </div>
-      ) : null}
+      {pay.method === "transfer" ? <TransferBox info={pay} className="mt-5 w-full" /> : null}
 
       <div className="mt-6 flex w-full flex-col gap-2">
         {result.trackingPath !== "/" ? (

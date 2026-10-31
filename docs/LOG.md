@@ -11,6 +11,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 
 - Phát triển trên nhánh `claude/ecstatic-goodall-p4j7pc`, push nhánh đó. **Chỉ đưa lên `main` khi chủ quán bảo** (đã làm cho M0 bằng `git push origin HEAD:main`, fast-forward).
 - Trả lời chủ quán bằng tiếng Việt; code/tên biến tiếng Anh.
+- **Ưu tiên tái sử dụng (chủ quán chốt 31/10/2026):** trước khi tự code một chức năng, tìm xem đã có lời giải ổn trên GitHub / StackOverflow / tài liệu chính thức / thư viện npm có uy tín chưa — có và ổn (còn bảo trì, giấy phép phù hợp, nhẹ, không phá ngân sách JS) thì **lấy lại** (ghi nguồn trong comment/commit); không có mới tự code. Thư viện mới vẫn phải ghi lý do (§0 luật 9).
 - Definition of Done (§0): `npm run lint` · `npm run typecheck` · `npm test` · `npm run build` · `CI=1 npx playwright test` đều xanh.
 
 ## Trạng thái
@@ -24,7 +25,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
 | **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | `c03560b` |
 | **M5 — Kitchen Dashboard** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
-| M6 — Thanh toán, SEO, PWA | ⏭ **làm tiếp** | — |
+| **M6 — Thanh toán, SEO, PWA** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
+| Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -61,7 +63,8 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 ## Câu hỏi đang treo cho chủ quán
 
 1. Địa chỉ & toạ độ Rêu; thông tin pháp lý footer (đang `TODO` trong `data/site.ts`) — **chặn ra mắt**.
-2. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
+2. **Region Supabase:** biến `DATABASE_URL` của môi trường đang trỏ `aws-0-ap-south-1` (Mumbai), Blueprint chọn `ap-southeast-1` (Singapore, gần VN hơn ~30–50 ms) và `/chinh-sach` ghi "Singapore" → xác nhận/đổi project hoặc sửa câu trong chính sách.
+3. Các mục còn lại §16 (khu vực/phí ship, BOM, VietQR…) — dùng mặc định Phụ lục A.
 
 ## M2 — đã làm
 
@@ -128,6 +131,24 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Hoàn tất đơn COD **không** tự chuyển `payment_status = paid` (chưa có yêu cầu) — cân nhắc khi làm đối soát.
 - Toast "Đơn mới" cũng kêu cho đơn do chính nhân viên vừa nhập (máy khác cần nghe) — chấp nhận.
 
+## M6 — đã làm
+
+- **VietQR** (`lib/payments.ts` thuần + `lib/server/payments/vietqr.ts` đọc env): link `img.vietqr.io/image/<BIN>-<STK>-compact2.png?amount&addInfo&accountName`. Gói npm `vietqr` đã xem — chỉ nối chuỗi y hệt nhưng kéo axios + API key → tự viết 1 hàm. Khối `components/store/transfer-box.tsx` dùng chung màn thành công + `/o/[token]` (QR, STK, chủ TK, Lưu QR, Sao chép STK/nội dung). Thiếu env → chỉ số tiền + nội dung (như M4).
+- **SePay** `POST /api/webhooks/sepay` → `recordSepayCore` (`lib/server/payments/sepay.ts`): header `Authorization: Apikey <SEPAY_WEBHOOK_KEY>` (so sánh hằng thời gian), zod payload, idempotent `sepay:<id>`, cộng dồn nhiều lần chuyển, `settlePaid` tách từ `markPaidCore` (dùng chung). Telegram 💰/thiếu/dư/không khớp (`paymentText`). Gói `sepay-pg-node` chính thức là cổng thanh toán (khác webhook ngân hàng) → không dùng.
+- **Trả trước theo rủi ro**: đã có từ M4 (`requiresPrepay`) — giữ nguyên.
+- **SEO**: `/m/[slug]` (PPR, `generateStaticParams`, OG riêng 1200×630 có ảnh món/giá; font Be Vietnam Pro OFL trong `assets/og/` lấy từ `@fontsource`), `StorePage` dùng chung với `/`; JSON-LD `Restaurant` + `hasMenu` + `OrderAction` (bỏ trường còn TODO); `robots.ts`, `sitemap.ts`, `manifest.ts` + icon 192/512/maskable/apple (cắt từ `logo-mark.jpg` bằng sharp, `public/icons/`).
+- **Analytics + `?src=`**: `proxy.ts` ghi `th_src` (chỉ chạy khi URL có `src`), `placeOrder` lưu `orders.source`. `@vercel/analytics` (MIT, ~1–2 KB) — `<Analytics>` chỉ render khi `VERCEL`; sự kiện `view_item · add_to_cart · begin_checkout · lookup_known · place_order · slot_full · cancel_order` kèm `src` (`lib/client/analytics.ts`), URL `/o/<token>` bị che.
+- **`/chinh-sach`**: bảo mật + điều khoản, link ở footer & form chốt đơn. Thời hạn lưu ở `lib/privacy.ts`; cron daily **thực sự** xoá địa chỉ/toạ độ của đơn > 90 ngày (`addressesAnonymized`).
+- **`instrumentation.ts`**: `onRequestError` → Telegram ≤ 1 tin/phút/instance, che token/query.
+- **Test:** unit 111 (`lib/__tests__/payments.test.ts`, tin thanh toán) · int 49 (`sepay.int.test.ts`: đủ/thiếu/dư/huỷ/không khớp/tiền ra/gửi lại song song, COD→CK, cron xoá địa chỉ) · e2e 72/72 (thêm `e2e/m6.spec.ts`: /m + OG, ?src → đơn, VietQR, webhook 401/400/200/idempotent → paid + xác nhận, /chinh-sach axe, robots/sitemap/manifest/JSON-LD). JS `/` ≈ 175 KB gzip. Lighthouse mobile (bản `next start` trong sandbox, 2 lần): Performance 87–95 · Accessibility 100 · Best practices 100 · SEO 100. Thêm `app/favicon.ico` (hết lỗi 404 console) và `fetchPriority=high` cho ảnh LCP.
+
+## Sau M6 — việc của chủ quán trước ra mắt
+
+- Điền `.env`/Vercel: `VIETQR_*`, `SEPAY_WEBHOOK_KEY` (+ cấu hình webhook trong SePay tới `/api/webhooks/sepay`, chứng thực API Key), `TELEGRAM_*`, `SESSION_SECRET`, `CRON_SECRET`, `CUSTOMER_COOKIE_SECRET`.
+- **Thử thật**: chuyển 1 khoản nhỏ với nội dung mã đơn → kiểm tra đơn tự `paid` + tin 💰. Tài liệu SePay/VietQR **không truy cập được từ sandbox** khi làm M6 → tên trường payload theo tài liệu SePay quen thuộc (id, content, transferType, transferAmount…); zod để `loose` nên trường lạ không làm hỏng, nhưng nếu SePay đổi tên trường thì log `sepay` sẽ báo 400.
+- Nhờ người có chuyên môn pháp lý rà `/chinh-sach` (cam kết "xử lý trong 72 giờ", hoàn tiền) — sửa trực tiếp trong `app/chinh-sach/page.tsx`.
+- Lighthouse mobile: chạy lại trên domain thật (Vercel) — trong sandbox chỉ đo được bản `next start` cục bộ.
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
@@ -141,4 +162,6 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - DB local: `DATABASE_URL=postgres://postgres:postgres@localhost:5433/heat` (int test: `…/heat_test`). `.env.local` để trống DB (chờ Supabase) → truyền biến khi chạy lệnh.
 - Lớp `.input` (CSS thường, ngoài `@layer`) **thắng** utility Tailwind 4 (`w-auto`, `pr-8`, `bg-surface`…) → dùng `!w-auto`, `!pr-9`. Select rộng 100% từng làm trang admin tràn ngang → trình duyệt mobile thu nhỏ trang và Playwright bấm trượt.
 - Login rate-limit 5/15′/IP: chạy script đăng nhập nhiều lần → `DELETE FROM rate_limits`.
+- `next build` đọc `DATABASE_URL` trong `.env.local` (giờ đã là Supabase, sandbox không phân giải được) → luôn truyền `DATABASE_URL=…5433/heat` khi build/e2e.
+- e2e ghi bảng `payments` (webhook) → `resetOrders` xoá cả `payments`; id giao dịch SePay trùng giữa các lần chạy sẽ thành `duplicate`.
 - Script Playwright ngoài repo: `createRequire("/home/user/nancho/")("@playwright/test")` (gói `playwright` không resolve từ scratchpad).
