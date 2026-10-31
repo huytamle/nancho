@@ -29,7 +29,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| **M9 — Chấm công, bảng công, lương** | ✅ trên nhánh (31/10/2026) — chờ chủ quán cho lên `main` | xem `git log` |
+| **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | M10–M11 (kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M10 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
@@ -213,6 +213,8 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - **DAL** `lib/server/dal/payroll.ts`; **action** `app/actions/time.ts`; khung action chung `lib/server/ops/run.ts` (`runOps`, `notifyOps`) — `app/actions/ops.ts` dùng lại.
 - **UI** tab **Công** (`components/ops/time-panel.tsx`): thẻ Vào/Ra ca, lịch tuần, giờ công tháng, bảng công chờ xác nhận (PIN + "Chưa đồng ý"), phiếu lương của mình (In/lưu PDF — `printCard()` + CSS `@media print` chỉ in thẻ đó, [Đã nhận lương]); owner/manager thêm: Cần xem lại, Bảng công tháng (gửi, sửa/thêm lượt), Lịch ca tuần (giờ bắt đầu–kết thúc, Chép tuần trước), Wi-Fi quán. Tab **Lương** (owner, `payroll-panel.tsx`): doanh thu + quỹ, tính phiếu, sửa tuân thủ/điều chỉnh, duyệt, đã trả (CK/tiền mặt), đơn giá giờ, ngày lễ, cài đặt lương. Thanh tab > 5 mục (owner 7, manager 6) dùng chữ 13px, cho xuống 2 dòng.
 - **Cron** `runPayrollCron` gọi trong `/api/cron/daily`.
+- **Test:** unit 185 (`lib/domain/__tests__/payroll.test.ts` 22; `worktime.ts`/`payroll.ts` 100% dòng) · int 96 (`payroll.int.test.ts` 22: vào/ra ca + bấm đúp song song, Wi-Fi quán, `late_out`/`off_site`, quên ra ca (cron + vào ca hôm sau), sửa giờ có lý do/không tự sửa/công quản lý do owner/chồng lượt, lịch + chép tuần, gửi → PIN → khoá, chưa đồng ý → nháp, **DTO quản lý không có trường tiền**, đơn giá ≥ tối thiểu + lịch sử, phiếu lương 2 đơn giá + Tết ×3 + đêm, quỹ 1% chia đủ, sửa tuân thủ/điều chỉnh, duyệt → trả → đã nhận, cron ngày 1/3/5) · e2e 99/99 (`e2e/m9.spec.ts`: vào/ra ca; quản lý gửi bảng công → nhân viên xác nhận PIN → owner đơn giá → tính → duyệt → CK → nhân viên đã nhận; axe; không tràn ngang).
+- **Bẫy:** ô `type="time"`/`date` trên Chromium mobile có bề rộng nội tại lớn → trong grid dùng `minmax(0,1fr)` + `min-w-0`. Kiểm tra "không tràn ngang" phải so `scrollWidth` với **bề rộng viewport** (`page.viewportSize()`), không phải `innerWidth` (Chromium mobile tự thu nhỏ trang khi tràn nên innerWidth tăng theo) — `e2e/m9.spec.ts` đã dùng cách mới; các spec cũ vẫn cách cũ.
 - `copy.admin.errors.locked` đổi thành chung "Đã khoá — không sửa được nữa." (dùng cho cả chứng từ lẫn bảng công).
 
 ## M9 — việc của chủ quán để bật
