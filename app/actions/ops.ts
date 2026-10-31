@@ -1,10 +1,9 @@
 "use server";
 
 import { eq } from "drizzle-orm";
-import { refresh } from "next/cache";
 import { after } from "next/server";
 import * as z from "zod";
-import type { AdminError, AdminResult } from "@/lib/admin-contract";
+import type { AdminResult } from "@/lib/admin-contract";
 import { normalizeCounts, type CashCounts } from "@/lib/domain/cash";
 import { CHECKLIST_MOMENTS, ITEM_ID, MAX_ITEMS, SLUG } from "@/lib/domain/checklist";
 import { EXPENSE_CATEGORIES, EXPENSE_SOURCES } from "@/lib/domain/expense-command";
@@ -12,7 +11,7 @@ import { MAX_AMOUNT } from "@/lib/domain/money-text";
 import { ROLES } from "@/lib/domain/roles";
 import { expenseText } from "@/lib/ops-text";
 import { createLinkToken } from "@/lib/server/auth/link-token";
-import { currentStaff, type Staff } from "@/lib/server/auth/session";
+import { currentStaff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
 import { getDb } from "@/lib/server/db/client";
 import { markChecklistItemCore, saveChecklistTemplateCore } from "@/lib/server/dal/checklist";
@@ -34,13 +33,11 @@ import {
   saveOpsSettingsCore,
   setExpenseCategoryCore,
   setStaffRolesCore,
-  type OpsActor,
 } from "@/lib/server/dal/ops";
-import { sendTelegram, telegramApi } from "@/lib/server/notify/telegram";
+import { telegramApi } from "@/lib/server/notify/telegram";
+import { runOps, notifyOps } from "@/lib/server/ops/run";
 
 // Mutation màn Vận hành (§17): zod → phiên → DAL (kiểm quyền nghiệp vụ) → refresh(). Tin Telegram gửi trong after().
-
-type Fail = { ok: false; reason: AdminError };
 
 const money = z.number().int().min(0).max(MAX_AMOUNT);
 const positive = z.number().int().min(1).max(MAX_AMOUNT);
@@ -53,26 +50,8 @@ const counts = z.record(z.string(), z.unknown()).transform((v, c) => {
 });
 const fileId = z.uuid();
 
-const actorOf = (s: Staff): OpsActor => ({ id: s.id, name: s.name, roles: s.roles });
-
-async function run<I, R extends AdminResult>(schema: z.ZodType<I>, raw: unknown, fn: (input: I, actor: OpsActor, now: Date) => Promise<R | Fail>): Promise<R | Fail> {
-  const parsed = schema.safeParse(raw);
-  if (!parsed.success) return { ok: false, reason: "invalid" };
-  try {
-    const staff = await currentStaff();
-    if (!staff) return { ok: false, reason: "forbidden" };
-    const res = await fn(parsed.data, actorOf(staff), serverNow());
-    if (res.ok) refresh();
-    return res;
-  } catch (err) {
-    console.error(JSON.stringify({ evt: "ops_failed", error: String(err) }));
-    return { ok: false, reason: "server_error" };
-  }
-}
-
-const notify = (text: string | null) => {
-  if (text) after(() => sendTelegram(text).then(() => undefined));
-};
+const run = runOps;
+const notify = notifyOps;
 
 type CountResult = AdminResult<{ total: number; expected: number | null; variance: number | null }>;
 

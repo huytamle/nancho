@@ -138,14 +138,14 @@ export type OrderingSettings = {
 export type PaymentSettings = { prepayPolicy: "risk_based" | "never" | "always"; prepayOverTotal: number };
 export type ShippingSettings = { freeShipFrom: number | null };
 export type ContactSettings = { hotline: string; zaloPhone: string };
-/** Vận hành (§17.3): ngưỡng lệch két, định mức hộp chi — VND. */
-export type OpsSettings = { cashTolerance: number; pettyFloat: number };
+/** Vận hành (§17.3, §17.7): ngưỡng lệch két, định mức hộp chi — VND; IP công khai Wi-Fi quán (chấm công). */
+export type OpsSettings = { cashTolerance: number; pettyFloat: number; storeIps: string[] };
 
 export const DEFAULT_SETTINGS = {
   ordering: { daysAhead: 4, closingSoonMin: 45, fewThreshold: 2, deliveryWindowMin: 20, maxQtyPerLine: 10 },
   payment: { prepayPolicy: "risk_based", prepayOverTotal: 1_000_000 },
   shipping: { freeShipFrom: null },
-  ops: { cashTolerance: 20_000, pettyFloat: 1_000_000 },
+  ops: { cashTolerance: 20_000, pettyFloat: 1_000_000, storeIps: [] as string[] },
 } as const satisfies {
   ordering: OrderingSettings;
   payment: PaymentSettings;

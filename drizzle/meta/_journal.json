@@ -29,6 +29,13 @@
       "when": 1793437893722,
       "tag": "0003_checklist_handbook",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793439994305,
+      "tag": "0004_payroll",
+      "breakpoints": true
     }
   ]
 }

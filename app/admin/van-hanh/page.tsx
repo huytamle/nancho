@@ -8,6 +8,10 @@ import { serverNow } from "@/lib/server/clock";
 import { loadWorkView } from "@/lib/server/dal/checklist";
 import { loadHandbookView } from "@/lib/server/dal/handbook";
 import { loadOpsView } from "@/lib/server/dal/ops";
+import { loadPayrollView, loadTimeView } from "@/lib/server/dal/payroll";
+import { isISODate } from "@/lib/domain/time";
+import { isPeriod } from "@/lib/domain/worktime";
+import { clientIp } from "@/lib/server/rate-limit";
 
 export const metadata: Metadata = { title: opsCopy.metaTitle };
 
@@ -22,17 +26,29 @@ export default function OpsPage({ searchParams }: PageProps<"/admin/van-hanh">) 
 
 async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchParams">) {
   const staff = await requireStaff();
-  const { tab, trang } = await searchParams;
+  const { tab, trang, ky, tuan } = await searchParams;
   const actor = { id: staff.id, name: staff.name, roles: staff.roles };
   const now = serverNow();
   const initial = typeof tab === "string" && tab in opsCopy.tabs ? (tab as OpsTab) : "ca";
   // Chỉ dựng (và ghi log xem) trang sổ tay khi đang mở tab Sổ tay với `trang=`.
   const slug = initial === "so-tay" && typeof trang === "string" ? trang.slice(0, 60) : null;
-  const [view, work, book] = await Promise.all([loadOpsView(actor, now), loadWorkView(actor, now), loadHandbookView(actor, slug, now)]);
+  // `ky` = kỳ bảng công/lương (YYYY-MM), `tuan` = tuần lịch ca (một ngày bất kỳ trong tuần).
+  const period = typeof ky === "string" && isPeriod(ky) ? ky : null;
+  const week = typeof tuan === "string" && isISODate(tuan) ? tuan : null;
+  const ip = await clientIp();
+  const [view, work, book, time, payroll] = await Promise.all([
+    loadOpsView(actor, now),
+    loadWorkView(actor, now),
+    loadHandbookView(actor, slug, now),
+    loadTimeView(actor, now, { ip, period, week }),
+    loadPayrollView(actor, now, { period }),
+  ]);
   return (
     <OpsDashboard
       view={view}
       work={work}
+      time={time}
+      payroll={payroll}
       handbook={<HandbookPanel view={book} now={now.toISOString()} />}
       bookPage={book.page?.slug ?? null}
       initialTab={initial}

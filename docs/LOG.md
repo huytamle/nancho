@@ -29,7 +29,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| M9–M11 (chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M9 là milestone kế tiếp** | — |
+| **M9 — Chấm công, bảng công, lương** | ✅ trên nhánh (31/10/2026) — chờ chủ quán cho lên `main` | xem `git log` |
+| M10–M11 (kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M10 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -204,6 +205,28 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
 - Tỉ lệ hoàn thành checklist cho thưởng tuân thủ: tính từ `checklist_runs` + `progress(items hiện tại, done)` — đừng dùng `completed_at` (mẫu có thể đã thêm mục sau khi lượt xong).
 - Lỗi action thêm: `value_required`, `photo_needed`, `duplicate` (`lib/admin-contract.ts`, chuỗi ở `copy.admin.errors`).
+
+## M9 — đã làm
+
+- **Bảng** (migration `0004_payroll`): `time_entries`, `shift_plans`, `holidays`, `pay_rates`, `timesheets`, `payslips` (chi tiết ràng buộc ở Blueprint M9). `settings.ops.storeIps` + key mới `payroll` (`DEFAULT_PAYROLL` trong `lib/domain/payroll.ts`). `saveOpsSettingsCore` giờ **gộp** với giá trị cũ (trước đó ghi đè cả object → sẽ mất `storeIps`).
+- **Domain** `worktime.ts` (tính theo từng phút: đêm 22–06, lễ theo ngày của phút, làm thêm khi ngày công > 8 giờ, đi muộn/về sớm, `late_out`, quên ra ca, kỳ tháng) + `payroll.ts` (dòng lương theo đơn giá có lịch sử, quỹ 1% chia số dư lớn nhất, tiêu chí tuân thủ, `canManageTime`, `canonicalJson`). Ví dụ Blueprint khớp: 16:00–22:15 = 6 giờ 15 phút không làm thêm; 20 phút sau 22:00 × 20.000đ × 30% = 2.000đ.
+- **DAL** `lib/server/dal/payroll.ts`; **action** `app/actions/time.ts`; khung action chung `lib/server/ops/run.ts` (`runOps`, `notifyOps`) — `app/actions/ops.ts` dùng lại.
+- **UI** tab **Công** (`components/ops/time-panel.tsx`): thẻ Vào/Ra ca, lịch tuần, giờ công tháng, bảng công chờ xác nhận (PIN + "Chưa đồng ý"), phiếu lương của mình (In/lưu PDF — `printCard()` + CSS `@media print` chỉ in thẻ đó, [Đã nhận lương]); owner/manager thêm: Cần xem lại, Bảng công tháng (gửi, sửa/thêm lượt), Lịch ca tuần (giờ bắt đầu–kết thúc, Chép tuần trước), Wi-Fi quán. Tab **Lương** (owner, `payroll-panel.tsx`): doanh thu + quỹ, tính phiếu, sửa tuân thủ/điều chỉnh, duyệt, đã trả (CK/tiền mặt), đơn giá giờ, ngày lễ, cài đặt lương. Thanh tab > 5 mục (owner 7, manager 6) dùng chữ 13px, cho xuống 2 dòng.
+- **Cron** `runPayrollCron` gọi trong `/api/cron/daily`.
+- `copy.admin.errors.locked` đổi thành chung "Đã khoá — không sửa được nữa." (dùng cho cả chứng từ lẫn bảng công).
+
+## M9 — việc của chủ quán để bật
+
+1. `npm run db:migrate` (migration `0004_payroll`). Không có env mới.
+2. Tab **Lương**: nhập đơn giá giờ từng người (≥ 20.000đ — vùng III), ngày lễ năm nay (Tết âm lịch!), kiểm tra cài đặt thưởng.
+3. Tab **Công**: đang ở quán, bắt Wi-Fi quán → [Đây là Wi-Fi quán]; xếp lịch ca tuần (Chép tuần trước cho tuần sau).
+4. Hợp đồng lao động nên có điều khoản đồng ý xác nhận bảng công/lương qua ứng dụng (§17.7).
+
+## M10 — lưu ý từ M9
+
+- Chỉ số §17.10 "doanh thu/giờ công", "chi phí nhân sự %": giờ công lấy `timesheets.minutes` (đã gửi) hoặc `computeTimesheet` (nháp); tiền lương = `payslips.total` — **chỉ owner** (`loadPayrollView` trả null cho người khác; giữ nguyên nguyên tắc ở DTO).
+- `periodRevenue(period)` (pizza hoàn tất + café Sapo) đã có ở `dal/payroll.ts` — dùng lại.
+- Chủ quán cần: nhập đơn giá giờ cho từng người (tab Lương) trước ngày 1 tháng sau; nhập ngày lễ (Tết âm lịch!); vào quán bấm [Đây là Wi-Fi quán]; xếp lịch ca tuần để có đi muộn/`late_out`.
 
 ## Bẫy môi trường đã gặp
 

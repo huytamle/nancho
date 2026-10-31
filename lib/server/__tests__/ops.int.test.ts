@@ -297,7 +297,7 @@ describe("bot Telegram", () => {
     await handleTelegramUpdate(cb(`x:${e.id}`), deps());
     expect((await db.select().from(t.expenses))[0].cancelledAt).not.toBeNull();
     await handleTelegramUpdate(message(1001, `/chihuy C${e.id}`), deps());
-    expect(lastText()).toContain("đã khoá");
+    expect(lastText()).toContain("Đã khoá");
   });
 
   it("nhóm lạ bị bỏ qua; người chưa liên kết được nhắc; nhân viên không được chi; cú pháp sai được hướng dẫn", async () => {

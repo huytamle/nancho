@@ -4,6 +4,7 @@ import { varianceLevel } from "@/lib/domain/cash";
 import { rangeLabel, type ValueSpec } from "@/lib/domain/checklist";
 import { expenseCode, type ExpenseCategory, type ExpenseSource } from "@/lib/domain/expense-command";
 import type { Role } from "@/lib/domain/roles";
+import { vnDateOf, vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
 
 export const CATEGORY_LABEL: Record<ExpenseCategory, string> = {
@@ -122,3 +123,31 @@ export function checklistAlertText(a: { title: string; label: string; value: num
   const u = a.spec.unit ? ` ${a.spec.unit}` : "";
   return `⚠️ ${a.label}: ${String(a.value).replace(".", ",")}${u} (chuẩn ${rangeLabel(a.spec)})\n${a.title} · ${a.by} ${a.time}`;
 }
+
+// ── Chấm công & lương (§17.7) ──
+
+/** "2026-10" → "tháng 10/2026". */
+export const periodName = (period: string) => `tháng ${period.slice(5)}/${period.slice(0, 4)}`;
+
+const dm = (d: Date) => {
+  const v = vnDateOf(d);
+  return `${v.slice(8)}/${v.slice(5, 7)}`;
+};
+
+export function forgotOutText(rows: { name: string; clockIn: Date }[]): string {
+  return [`⏰ Quên ra ca (chưa tính giờ — quản lý sửa giờ kèm lý do):`, ...rows.map((r) => `• ${r.name} · vào ${vnTimeLabel(r.clockIn)} ${dm(r.clockIn)}`)].join("\n");
+}
+
+export const timesheetDisputeText = (p: { name: string; period: string; reason: string }) =>
+  `↩️ ${p.name} chưa đồng ý bảng công ${periodName(p.period)}: “${p.reason}” — quản lý xem lại rồi gửi lại.`;
+
+export const timesheetDraftText = (label: string, n: number) =>
+  `📋 Bảng công ${label} đã sẵn sàng (${n} người). Quản lý: Vận hành → Công → kiểm tra cờ, sửa giờ rồi [Gửi] để nhân viên xác nhận.`;
+
+export const timesheetRemindText = (label: string, names: string[]) => `⏳ Chưa xác nhận bảng công ${label}: ${names.join(", ")}.`;
+
+/** `unpaid` = phiếu đã tạo mà chưa trả; `missing` = người có công mà chưa có phiếu. */
+export const paydayText = (label: string, unpaid: number, missing: number) =>
+  unpaid + missing === 0
+    ? `💸 Hôm nay trả lương ${label} — mọi phiếu đã trả.`
+    : `💸 Hôm nay trả lương ${label}: ${unpaid} phiếu chưa trả${missing ? `, ${missing} người chưa có phiếu` : ""} — chủ quán vào Vận hành → Lương.`;

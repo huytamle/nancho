@@ -30,7 +30,9 @@ import {
 import type { CashCounts } from "@/lib/domain/cash";
 import type { ChecklistDone, ChecklistItem } from "@/lib/domain/checklist";
 import type { ExpenseCategory } from "@/lib/domain/expense-command";
+import type { PayLine } from "@/lib/domain/payroll";
 import type { Role } from "@/lib/domain/roles";
+import type { TimeFlag } from "@/lib/domain/worktime";
 import type { ComboGroup, ISODate } from "@/lib/domain/types";
 
 const tstz = () => timestamp({ withTimezone: true });
@@ -64,6 +66,8 @@ export const expenseSource = pgEnum("expense_source", ["petty", "pocket", "bank"
 export const expenseStatus = pgEnum("expense_status", ["recorded", "pending", "approved", "rejected", "reimbursed"]);
 export const checklistMoment = pgEnum("checklist_moment", ["open", "during", "close", "weekly"]);
 export const handbookKind = pgEnum("handbook_kind", ["sop", "recipe"]);
+export const timesheetStatus = pgEnum("timesheet_status", ["draft", "submitted", "acknowledged"]);
+export const payslipStatus = pgEnum("payslip_status", ["draft", "approved", "paid"]);
 
 // ── Thực đơn ──
 
@@ -368,7 +372,7 @@ export const staff = pgTable("staff", {
 }, (t) => [check("staff_roles_check", sql`cardinality(${t.roles}) > 0`)]).enableRLS();
 
 export const settings = pgTable("settings", {
-  key: text().$type<"ordering" | "payment" | "shipping" | "contact" | "ops">().primaryKey(),
+  key: text().$type<"ordering" | "payment" | "shipping" | "contact" | "ops" | "payroll">().primaryKey(),
   value: jsonb().notNull(),
 }).enableRLS();
 
@@ -546,6 +550,138 @@ export const handbookPages = pgTable(
   (t) => [
     check("handbook_pages_title_check", sql`char_length(${t.title}) BETWEEN 1 AND 80`),
     check("handbook_pages_body_check", sql`char_length(${t.body}) <= 20000`),
+  ],
+).enableRLS();
+
+// ── Chấm công, bảng công, lương (§17.7, M9) ──
+
+/** Lượt chấm công. Server ghi giờ & IP; tối đa một lượt đang mở mỗi người. Sửa giờ → cờ `edited` + lý do + ops_events. */
+export const timeEntries = pgTable(
+  "time_entries",
+  {
+    id: serial().primaryKey(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    clockIn: tstz().notNull(),
+    clockOut: tstz(),
+    inIp: text(),
+    outIp: text(),
+    flags: text().array().$type<TimeFlag[]>().notNull().default(sql`'{}'::text[]`),
+    editReason: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index().on(t.staffId, t.clockIn),
+    uniqueIndex("time_entries_one_open").on(t.staffId).where(sql`${t.clockOut} IS NULL`),
+    check("time_entries_order_check", sql`${t.clockOut} IS NULL OR ${t.clockOut} >= ${t.clockIn}`),
+  ],
+).enableRLS();
+
+/** Lịch ca theo ngày (một ca/người/ngày) — để tính đi muộn/về sớm, `late_out`. */
+export const shiftPlans = pgTable(
+  "shift_plans",
+  {
+    id: serial().primaryKey(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    date: isoDate().notNull(),
+    start: time().notNull(),
+    end: time().notNull(),
+  },
+  (t) => [unique("shift_plans_staff_date").on(t.staffId, t.date), check("shift_plans_time_check", sql`${t.end} > ${t.start}`)],
+).enableRLS();
+
+/** Ngày lễ (owner nhập) — hệ số mặc định 3,0. */
+export const holidays = pgTable(
+  "holidays",
+  {
+    date: isoDate().primaryKey(),
+    name: text().notNull(),
+    multiplier: numeric({ precision: 3, scale: 1, mode: "number" }).notNull().default(3),
+  },
+  (t) => [check("holidays_multiplier_check", sql`${t.multiplier} >= 1 AND ${t.multiplier} <= 5`)],
+).enableRLS();
+
+/** Đơn giá giờ có lịch sử — tăng lương không đổi kỳ cũ. Chặn dưới mức tối thiểu ở DAL (mức do owner cập nhật). */
+export const payRates = pgTable(
+  "pay_rates",
+  {
+    id: serial().primaryKey(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    hourlyRate: integer().notNull(),
+    effectiveFrom: isoDate().notNull(),
+    createdBy: integer().references(() => staff.id),
+    createdAt: createdAt(),
+  },
+  (t) => [unique("pay_rates_staff_from").on(t.staffId, t.effectiveFrom), check("pay_rates_rate_check", sql`${t.hourlyRate} > 0`)],
+).enableRLS();
+
+/**
+ * Bảng công tháng. `draft` tính sống từ time_entries; khi gửi chụp `snapshot` + `snapshot_hash` (sha256);
+ * nhân viên xác nhận bằng PIN → `acknowledged` (khoá — giờ công trong kỳ không sửa được nữa).
+ */
+export const timesheets = pgTable(
+  "timesheets",
+  {
+    id: serial().primaryKey(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    period: text().notNull(),
+    status: timesheetStatus().notNull().default("draft"),
+    minutes: integer().notNull().default(0),
+    nightMinutes: integer().notNull().default(0),
+    overtimeMinutes: integer().notNull().default(0),
+    holidayMinutes: integer().notNull().default(0),
+    lateCount: integer().notNull().default(0),
+    snapshot: jsonb(),
+    snapshotHash: text(),
+    submittedBy: integer().references(() => staff.id),
+    submittedAt: tstz(),
+    ackAt: tstz(),
+    ackIp: text(),
+    ackDevice: text(),
+    disputeReason: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("timesheets_staff_period").on(t.staffId, t.period),
+    check("timesheets_period_check", sql`${t.period} ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'`),
+    check("timesheets_snapshot_check", sql`(${t.status} = 'draft') = (${t.snapshot} IS NULL)`),
+  ],
+).enableRLS();
+
+/** Phiếu lương (chỉ owner tạo/duyệt) — chỉ từ bảng công đã xác nhận. */
+export const payslips = pgTable(
+  "payslips",
+  {
+    id: serial().primaryKey(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    period: text().notNull(),
+    timesheetId: integer()
+      .notNull()
+      .references(() => timesheets.id),
+    lines: jsonb().$type<PayLine[]>().notNull(),
+    meta: jsonb(),
+    total: integer().notNull(),
+    status: payslipStatus().notNull().default("draft"),
+    approvedBy: integer().references(() => staff.id),
+    approvedAt: tstz(),
+    paidAt: tstz(),
+    paidMethod: text().$type<"cash" | "bank">(),
+    staffAckAt: tstz(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("payslips_staff_period").on(t.staffId, t.period),
+    check("payslips_total_check", sql`${t.total} >= 0`),
+    check("payslips_paid_check", sql`(${t.status} = 'paid') = (${t.paidAt} IS NOT NULL)`),
   ],
 ).enableRLS();
 

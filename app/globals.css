@@ -383,3 +383,23 @@ select.input {
 .md hr {
   border-color: var(--line);
 }
+
+/* In riêng một thẻ (phiếu lương) — printCard() gắn data-print lên body và .print-target lên thẻ. */
+@media print {
+  body[data-print] * {
+    visibility: hidden;
+  }
+  body[data-print] .print-target,
+  body[data-print] .print-target * {
+    visibility: visible;
+  }
+  body[data-print] .print-target {
+    position: absolute;
+    inset: 0 0 auto 0;
+    background: #fff;
+  }
+  body[data-print] .print-target,
+  body[data-print] .print-target * {
+    color: #000 !important;
+  }
+}

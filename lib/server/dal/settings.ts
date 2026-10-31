@@ -1,5 +1,6 @@
 import "server-only";
 import { site } from "@/data/site";
+import { DEFAULT_PAYROLL, type PayrollSettings } from "@/lib/domain/payroll";
 import { normalizePhone } from "@/lib/domain/phone";
 import {
   DEFAULT_SETTINGS,
@@ -21,12 +22,14 @@ export type AppSettings = {
   shipping: ShippingSettings;
   contact: ContactSettings;
   ops: OpsSettings;
+  payroll: PayrollSettings;
 };
 
 const sitePhone = normalizePhone(site.contact.phoneDisplay) ?? "";
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   ...DEFAULT_SETTINGS,
+  payroll: DEFAULT_PAYROLL,
   contact: { hotline: sitePhone, zaloPhone: sitePhone },
 };
 
@@ -39,5 +42,6 @@ export async function loadSettings(db: Executor = getDb()): Promise<AppSettings>
     shipping: { ...DEFAULT_APP_SETTINGS.shipping, ...stored.shipping },
     contact: { ...DEFAULT_APP_SETTINGS.contact, ...stored.contact },
     ops: { ...DEFAULT_APP_SETTINGS.ops, ...stored.ops },
+    payroll: { ...DEFAULT_APP_SETTINGS.payroll, ...stored.payroll },
   };
 }

@@ -25,7 +25,7 @@ describe("migration", () => {
     const tables = await db.execute<{ relname: string; relrowsecurity: boolean }>(
       sql`SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'`,
     );
-    expect(tables.length).toBe(27);
+    expect(tables.length).toBe(33);
     expect(tables.filter((r) => !r.relrowsecurity)).toEqual([]);
     const policies = await db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'public'`);
     expect(policies.length).toBe(0);
@@ -41,7 +41,7 @@ describe("seed", () => {
     expect(await count(t.zones)).toBe(seedZones.length);
     expect(await count(t.pickupPoints)).toBe(seedPickupPoints.length);
     expect(await count(t.slotTemplates)).toBe(9);
-    expect(await count(t.settings)).toBe(5);
+    expect(await count(t.settings)).toBe(6);
   });
 
   it("chạy lại không tạo trùng và không ghi đè chỉnh sửa của chủ quán", async () => {

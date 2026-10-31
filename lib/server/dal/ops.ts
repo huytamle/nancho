@@ -639,7 +639,8 @@ export async function loadOpsView(viewer: OpsActor, now: Date, db: Db = getDb())
 export async function saveOpsSettingsCore(input: { cashTolerance: number; pettyFloat: number }, ctx: Ctx): Promise<{ ok: true } | Fail> {
   if (!ctx.actor.roles.includes("owner")) return fail("forbidden");
   const db = ctx.db ?? getDb();
-  await db.insert(t.settings).values({ key: "ops", value: input }).onConflictDoUpdate({ target: t.settings.key, set: { value: input } });
+  const value = { ...(await loadSettings(db)).ops, ...input };
+  await db.insert(t.settings).values({ key: "ops", value }).onConflictDoUpdate({ target: t.settings.key, set: { value } });
   await logEvent(db, "ops_settings", ctx.actor, input, ctx.now);
   return { ok: true };
 }

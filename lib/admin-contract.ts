@@ -21,6 +21,15 @@ export type AdminError =
   | "value_required"
   | "photo_needed"
   | "duplicate"
+  // Chấm công & lương (§17.7)
+  | "clocked_in"
+  | "not_clocked_in"
+  | "wrong_pin"
+  | "rate_limited"
+  | "unresolved"
+  | "period_open"
+  | "missing_rate"
+  | "below_min"
   | "server_error";
 
 export type AdminResult<T = object> = ({ ok: true } & T) | { ok: false; reason: AdminError };

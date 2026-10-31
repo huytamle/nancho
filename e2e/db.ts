@@ -30,6 +30,13 @@ export async function resetOrders() {
   await s`DELETE FROM checklist_runs`;
   // Trang sổ tay do e2e tạo/sửa (seed có updated_by = NULL); chạy lại `db:seed` nếu lỡ sửa trang seed.
   await s`DELETE FROM handbook_pages WHERE updated_by IS NOT NULL`;
+  await s`DELETE FROM payslips`;
+  await s`DELETE FROM timesheets`;
+  await s`DELETE FROM pay_rates`;
+  await s`DELETE FROM time_entries`;
+  await s`DELETE FROM shift_plans`;
+  await s`DELETE FROM holidays`;
+  await s`DELETE FROM settings WHERE key = 'payroll'`;
   await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
   await s`UPDATE service_days SET order_seq = 0, status = 'open'`;
@@ -72,6 +79,15 @@ export async function seedStaff() {
   for (const [role, name] of Object.entries(STAFF)) {
     await db()`INSERT INTO staff (name, roles, pin_hash) VALUES (${name}, ${ROLES_OF[role as keyof typeof STAFF]}::role[], ${pinHash})
       ON CONFLICT (name) DO UPDATE SET roles = EXCLUDED.roles, pin_hash = EXCLUDED.pin_hash, is_active = true, telegram_user_id = NULL`;
+  }
+}
+
+/** Lượt chấm công đã xong cho `name` — [ngày, vào, ra] theo giờ VN. */
+export async function seedTimeEntries(name: string, rows: [string, string, string][]) {
+  const s = db();
+  for (const [date, from, to] of rows) {
+    await s`INSERT INTO time_entries (staff_id, clock_in, clock_out)
+      SELECT id, ${`${date}T${from}:00+07:00`}::timestamptz, ${`${date}T${to}:00+07:00`}::timestamptz FROM staff WHERE name = ${name}`;
   }
 }
 

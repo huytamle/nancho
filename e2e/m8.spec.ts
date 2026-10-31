@@ -30,7 +30,7 @@ test.afterAll(closeDb);
 
 test("pha chế làm checklist mở ca: tick, số đo ngoài ngưỡng báo đỏ, xong 6/6", async ({ page }) => {
   await login(page, STAFF.barista, /\/admin\/van-hanh$/);
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Sổ tay", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Công", "Sổ tay", "Nhân viên"]);
   await tabs(page).getByRole("button", { name: "Việc" }).click();
   await expect(page).toHaveURL(/tab=viec/);
 
