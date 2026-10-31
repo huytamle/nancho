@@ -28,6 +28,7 @@ export default defineConfig({
       E2E: "1",
       TEST_NOW: process.env.TEST_NOW ?? "2026-11-06T10:00:00+07:00",
       CUSTOMER_COOKIE_SECRET: process.env.CUSTOMER_COOKIE_SECRET ?? "e2e-only-customer-cookie-secret-0123456789",
+      SESSION_SECRET: process.env.SESSION_SECRET ?? "e2e-only-session-secret-0123456789-abcdef",
     },
     url: baseURL,
     reuseExistingServer: !process.env.CI,

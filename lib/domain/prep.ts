@@ -43,7 +43,7 @@ export type PrepStop = {
   note?: string;
 };
 
-export type PrepWarning = { kind: "unpaid_transfer" | "allergy_note" | "unconfirmed"; orderCode: string; text: string };
+export type PrepWarning = { kind: "unpaid_transfer" | "allergy_note" | "unconfirmed"; orderCode: string; seq: number; text: string };
 
 export type PrepReport = {
   date: ISODate;
@@ -222,13 +222,13 @@ export function buildPrepReport(input: {
   const warnings: PrepWarning[] = orders.flatMap((o) => {
     const list: PrepWarning[] = [];
     if (o.paymentMethod === "transfer" && o.paymentStatus === "unpaid") {
-      list.push({ kind: "unpaid_transfer", orderCode: o.code, text: "Chuyển khoản chưa nhận tiền" });
+      list.push({ kind: "unpaid_transfer", orderCode: o.code, seq: o.seq, text: "Chuyển khoản chưa nhận tiền" });
     }
     const note = o.note?.toLocaleLowerCase("vi") ?? "";
     if (NOTE_KEYWORDS.some((k) => note.includes(k))) {
-      list.push({ kind: "allergy_note", orderCode: o.code, text: o.note! });
+      list.push({ kind: "allergy_note", orderCode: o.code, seq: o.seq, text: o.note! });
     }
-    if (o.status === "placed") list.push({ kind: "unconfirmed", orderCode: o.code, text: "Chưa xác nhận" });
+    if (o.status === "placed") list.push({ kind: "unconfirmed", orderCode: o.code, seq: o.seq, text: "Chưa xác nhận" });
     return list;
   });
 

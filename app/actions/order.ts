@@ -3,84 +3,21 @@
 import { cookies } from "next/headers";
 import { after } from "next/server";
 import * as z from "zod";
-import type { CheckoutErrorKey } from "@/data/copy";
 import { normalizePhone } from "@/lib/domain/phone";
-import {
-  LIMITS,
-  type CancelResult,
-  type FieldErrors,
-  type FieldKey,
-  type PlaceOrderInput,
-  type PlaceOrderResult,
-} from "@/lib/order-contract";
+import type { CancelResult, PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
 import { serverNow } from "@/lib/server/clock";
 import { CUSTOMER_COOKIE, rememberCookieOptions, signRemember } from "@/lib/server/customer-cookie";
 import { getCatalog } from "@/lib/server/dal/catalog";
 import { cancelOrderByTokenCore, placeOrderCore } from "@/lib/server/dal/orders";
 import { sendTelegram } from "@/lib/server/notify/telegram";
+import { fieldErrors, OrderInput } from "@/lib/server/order-input";
 import { clientIp, MIN, rateLimit } from "@/lib/server/rate-limit";
 
 // Đặt đơn thật (§8.1): parse → honeypot/thời gian điền → rate-limit → nghiệp vụ trong DAL (giữ suất,
 // idempotency, lưu khách) → cookie "ghi nhớ" → Telegram trong after() → DTO tối giản.
 
-const msg = (key: CheckoutErrorKey) => key;
-const qty = z.number().int().min(1).max(10);
-
-const Input = z.object({
-  idempotencyKey: z.uuid(),
-  batchId: z.number().int().positive(),
-  lines: z
-    .array(
-      z.object({
-        productId: z.string().max(40),
-        qty,
-        comboChoices: z.record(z.string(), z.string()).optional(),
-        addons: z.array(z.object({ productId: z.string().max(40), qty })).max(5).optional(),
-      }),
-    )
-    .min(1)
-    .max(15),
-  customer: z.object({
-    phone: z.string().max(20, msg("phoneInvalid")),
-    name: z.string().trim().min(LIMITS.nameMin, msg("nameShort")).max(LIMITS.nameMax, msg("nameLong")),
-    remember: z.boolean(),
-  }),
-  fulfillment: z.discriminatedUnion("type", [
-    z.object({
-      type: z.literal("delivery"),
-      zoneId: z.number(msg("zoneRequired")).int(),
-      addressText: z.string().trim().min(LIMITS.addressMin, msg("addressShort")).max(LIMITS.addressMax, msg("addressLong")).optional(),
-      savedAddressToken: z.string().max(200).optional(),
-      lat: z.number().min(-90).max(90).optional(),
-      lng: z.number().min(-180).max(180).optional(),
-    }),
-    z.object({ type: z.literal("pickup"), pickupPointId: z.number().int() }),
-  ]),
-  paymentMethod: z.enum(["cod", "transfer"]),
-  note: z.string().trim().max(LIMITS.noteMax, msg("noteLong")).optional(),
-  website: z.string().max(0).optional(),
-  startedAt: z.number().int(),
-}) satisfies z.ZodType<PlaceOrderInput>;
-
-const FIELD_OF: Record<string, FieldKey> = {
-  "customer.phone": "phone",
-  "customer.name": "name",
-  "fulfillment.zoneId": "zone",
-  "fulfillment.addressText": "address",
-  note: "note",
-};
-
-function fieldErrors(error: z.ZodError): FieldErrors {
-  const out: FieldErrors = {};
-  for (const issue of error.issues) {
-    const field = FIELD_OF[issue.path.join(".")];
-    if (field && !out[field]) out[field] = issue.message as CheckoutErrorKey;
-  }
-  return out;
-}
-
 export async function placeOrder(raw: PlaceOrderInput): Promise<PlaceOrderResult> {
-  const parsed = Input.safeParse(raw);
+  const parsed = OrderInput.safeParse(raw);
   if (!parsed.success) return { ok: false, reason: "invalid", fieldErrors: fieldErrors(parsed.error) };
   const input = parsed.data;
 

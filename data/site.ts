@@ -21,6 +21,8 @@ export const site = {
     name: "Cà phê Rêu",
     address: "TODO: địa chỉ Cà phê Rêu",
     mapsLink: null as string | null,
+    // "lat,lng" — điểm xuất phát chỉ đường cho shipper (tab Giao). null → Google dùng vị trí hiện tại.
+    coords: null as string | null,
   },
 
   // Bắt buộc hiển thị ở footer (NĐ 52/2013, sửa đổi bởi NĐ 85/2021). Chặn ra mắt nếu còn TODO.

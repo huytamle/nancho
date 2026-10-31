@@ -23,7 +23,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M2 — DB & DAL** | ✅ | `bf92fda` |
 | **M3 — Giao diện đặt món** | ✅ trên `main` | `5f7e70a` |
 | **M4 — Đặt đơn thật** | ✅ (nhánh, chưa lên `main`) | `c03560b` |
-| M5 — Kitchen Dashboard | ⏭ **làm tiếp** | — |
+| **M5 — Kitchen Dashboard** | ✅ (nhánh, chưa lên `main`) | xem `git log` |
+| M6 — Thanh toán, SEO, PWA | ⏭ **làm tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -112,6 +113,21 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Cron daily: dọn `rate_limits` cũ (chưa làm).
 - VietQR (`qrUrl` đang rỗng) ở M6. Chưa có Telegram thật để đo "≤ 3 s" — cần chủ quán tạo bot + nhóm, điền `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID`.
 
+## M5 — đã làm
+
+- **Auth:** `lib/server/auth/session.ts` (JWT `jose`, cookie `th_s`, `currentStaff` = `cache()`, `requireStaff(roles?)`), `dal/staff.ts` (argon2, chống dò id bằng băm giả), `app/actions/auth.ts` (rate-limit `login:ip` 5/15′), `proxy.ts` (lạc quan), `/admin/login` (chọn tên → PIN 6 số, bàn phím số lớn), script `npm run staff`.
+- **Dashboard** `/admin/kitchen?ngay=&tab=` (tab: `chuan-bi · me · don · giao · cai-dat`; shipper chỉ `giao`, kitchen không có `cai-dat`): `components/admin/*` — `kitchen-dashboard` (refresh 20 s, "Cập nhật x giây trước", banner ngoại tuyến, toast + ding đơn mới, huy hiệu tab Đơn, tab đổi bằng `history.replaceState`), `prep-board` (tick "đã lấy" localStorage theo ngày), `batch-board`, `order-list` + `order-detail-sheet` (nút trạng thái tính bằng `canTransition` phía client), `delivery-board` (copy shipper, bắt đầu tuyến, đã giao/bom, quầy Rêu, chỉ đường), `quick-order-sheet`, `settings-panel`, `wake-lock`. Bản in `/admin/kitchen/in` (A5 / `?kho=80`).
+- **Action** `app/actions/admin.ts`: helper `run(schema, raw, roles, fn)` → zod → quyền → DAL → `refresh()`. `toggleProduct` gọi `updateTag('catalog')`. Schema zod của đơn chuyển sang `lib/server/order-input.ts` (dùng chung web + đơn nhanh).
+- **Cron** `GET /api/cron/daily` (Bearer `CRON_SECRET`, so sánh hằng thời gian) + `vercel.json` (`sin1`, 15:45 VN).
+- **Test:** unit 102 (`lib/__tests__/kitchen-text.test.ts`: Bảng Tổng Hợp Phụ lục B từng dòng) · int 42 (`admin.int.test.ts`: vòng đời + bộ đếm khách, quyền, huỷ trả suất 1 lần, mẻ, đã trả, đổi mẻ, sức chứa, đơn nhanh/vượt chốt, cron gửi 1 lần + thử lại, dọn rate-limit, PIN, JWT) · e2e 57/57 (`e2e/kitchen.spec.ts`: redirect login/sai PIN, Phụ lục B trên tab Chuẩn bị, Đút lò/Ra lò, shipper chỉ tab Giao + giao tuyến, link Telegram + đơn nhanh, axe, không tràn ngang). `e2e/db.ts` thêm `seedStaff()` (PIN 123456) và `seedAppendixB()` (dùng fixture domain). JS `/` ≈ 171 KB gzip.
+
+## M6 — lưu ý từ M5
+
+- Chủ quán cần: tạo nhân viên bằng `npm run staff`, đặt `SESSION_SECRET` + `CRON_SECRET` trên hosting; điền `site.kitchen.coords` để link chỉ đường xuất phát từ Rêu.
+- SePay webhook nên gọi lại logic `markPaidCore` (ghi `payments`, tự xác nhận) — đổi `provider`/`providerTxnId`.
+- Hoàn tất đơn COD **không** tự chuyển `payment_status = paid` (chưa có yêu cầu) — cân nhắc khi làm đối soát.
+- Toast "Đơn mới" cũng kêu cho đơn do chính nhân viên vừa nhập (máy khác cần nghe) — chấp nhận.
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
@@ -123,4 +139,6 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Đo JS: đọc `<script src>` trong `.next/server/app/index.html`, bỏ file `noModule` (polyfill).
 - `next dev` tự ghi lại khối đầu `AGENTS.md` — commit nguyên như vậy.
 - DB local: `DATABASE_URL=postgres://postgres:postgres@localhost:5433/heat` (int test: `…/heat_test`). `.env.local` để trống DB (chờ Supabase) → truyền biến khi chạy lệnh.
+- Lớp `.input` (CSS thường, ngoài `@layer`) **thắng** utility Tailwind 4 (`w-auto`, `pr-8`, `bg-surface`…) → dùng `!w-auto`, `!pr-9`. Select rộng 100% từng làm trang admin tràn ngang → trình duyệt mobile thu nhỏ trang và Playwright bấm trượt.
+- Login rate-limit 5/15′/IP: chạy script đăng nhập nhiều lần → `DELETE FROM rate_limits`.
 - Script Playwright ngoài repo: `createRequire("/home/user/nancho/")("@playwright/test")` (gói `playwright` không resolve từ scratchpad).

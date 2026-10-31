@@ -134,7 +134,7 @@ describe("buildPrepReport — trạng thái & biên", () => {
     const placed = { ...orders[0], status: "placed" as const, lat: 15.7412, lng: 108.3615 };
     const lost = { ...orders[2], zoneId: 999 };
     const r = report({ orders: [placed, lost] });
-    expect(r.warnings).toContainEqual({ kind: "unconfirmed", orderCode: "TH-0611-01", text: "Chưa xác nhận" });
+    expect(r.warnings).toContainEqual({ kind: "unconfirmed", orderCode: "TH-0611-01", seq: 1, text: "Chưa xác nhận" });
     const routes = r.batches[0].routes;
     expect(routes.map((x) => x.routeName)).toEqual(["Tuyến Khu phố 2", "Chưa rõ tuyến"]);
     expect(routes[0].stops[0].mapsUrl).toBe("https://www.google.com/maps/search/?api=1&query=15.7412,108.3615");

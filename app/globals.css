@@ -298,3 +298,21 @@ select.input {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Bản in bếp (§10.7) ── */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+}
+
+.print-80 main {
+  max-width: 72mm;
+  font-size: 12px;
+}

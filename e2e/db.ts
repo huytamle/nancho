@@ -1,4 +1,8 @@
+import { hash } from "@node-rs/argon2";
+import { randomBytes, randomUUID } from "node:crypto";
 import postgres from "postgres";
+import { seedProducts } from "../data/seed";
+import { orders as appendixB } from "../lib/domain/__tests__/fixtures";
 
 // Trạng thái DB cho e2e: placeOrder ghi thật vào DB đã seed (TEST_NOW = Thứ Sáu 06/11/2026 10:00).
 // Các test ghi DB chạy tuần tự (workers: 1) và dọn sạch đơn/khách/rate-limit trước mỗi test.
@@ -15,6 +19,7 @@ export async function resetOrders() {
   await s`DELETE FROM orders`;
   await s`DELETE FROM customers`;
   await s`DELETE FROM rate_limits`;
+  await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
   await s`UPDATE service_days SET order_seq = 0, status = 'open'`;
 }
@@ -32,4 +37,48 @@ export async function orderStatus(code: string) {
 export async function closeDb() {
   await sql?.end();
   sql = null;
+}
+
+/** Nhân viên cho e2e bếp: PIN của mọi người = 123456. */
+export const STAFF = { owner: "Chủ quán", kitchen: "Bếp Tâm", shipper: "Ship Long" } as const;
+export const PIN = "123456";
+
+export async function seedStaff() {
+  const pinHash = await hash(PIN);
+  for (const [role, name] of Object.entries(STAFF)) {
+    await db()`INSERT INTO staff (name, role, pin_hash) VALUES (${name}, ${role}, ${pinHash})
+      ON CONFLICT (name) DO UPDATE SET role = EXCLUDED.role, pin_hash = EXCLUDED.pin_hash, is_active = true`;
+  }
+}
+
+/** 12 đơn Phụ lục B (fixture domain) vào ngày 06/11 — mẻ 17/18/19h theo giờ VN. */
+export async function seedAppendixB() {
+  const s = db();
+  const usesOf = new Map(seedProducts.map((p) => [p.id, p]));
+  const batchIds = new Map<number, number>();
+  for (const [fixtureId, hhmm] of [[1, "17:00"], [2, "18:00"], [3, "19:00"]] as const) {
+    const [b] = await s<{ id: number }[]>`SELECT id FROM batches WHERE ready_at = ${`2026-11-06T${hhmm}:00+07:00`}::timestamptz`;
+    batchIds.set(fixtureId, b.id);
+  }
+  for (const o of appendixB) {
+    const mains = o.items.filter((i) => !i.isGift && usesOf.get(i.productId)?.kind !== "addon");
+    const pan = mains.reduce((n, i) => n + (usesOf.get(i.productId)?.usesPan ?? 0) * i.qty, 0);
+    const bbq = mains.reduce((n, i) => n + (usesOf.get(i.productId)?.usesBbq ?? 0) * i.qty, 0);
+    const [c] = await s<{ id: string }[]>`INSERT INTO customers (phone, name, order_count) VALUES (${o.customerPhone}, ${o.customerName}, 1) RETURNING id`;
+    const subtotal = o.items.reduce((n, i) => n + i.lineTotal, 0);
+    const [row] = await s<{ id: string }[]>`
+      INSERT INTO orders (code, seq, service_date, batch_id, customer_id, customer_name, customer_phone, fulfillment,
+        zone_id, pickup_point_id, address_text, pan_units, bbq_units, subtotal, ship_fee, total, payment_method,
+        payment_status, status, note, tracking_token, idempotency_key)
+      VALUES (${o.code}, ${o.seq}, ${o.serviceDate}, ${batchIds.get(o.batchId)!}, ${c.id}, ${o.customerName}, ${o.customerPhone},
+        ${o.fulfillment}, ${o.zoneId}, ${o.pickupPointId}, ${o.addressText}, ${pan}, ${bbq}, ${subtotal}, ${o.total - subtotal},
+        ${o.total}, ${o.paymentMethod}, ${o.paymentStatus}, ${o.status}, ${o.note}, ${randomBytes(16).toString("base64url")}, ${randomUUID()})
+      RETURNING id`;
+    for (const i of o.items) {
+      await s`INSERT INTO order_items (order_id, product_id, name, unit_price, qty, line_total, combo_choices, is_gift)
+        VALUES (${row.id}, ${i.productId}, ${i.name}, ${i.unitPrice}, ${i.qty}, ${i.lineTotal}, ${i.comboChoices ? s.json(i.comboChoices) : null}, ${i.isGift})`;
+    }
+    await s`UPDATE batches SET used_pan = used_pan + ${pan}, used_bbq = used_bbq + ${bbq} WHERE id = ${batchIds.get(o.batchId)!}`;
+  }
+  await s`UPDATE service_days SET order_seq = ${appendixB.length} WHERE date = '2026-11-06'`;
 }

@@ -7,7 +7,7 @@ import { orderCode, transferMemo } from "@/lib/domain/order-code";
 import { canTransition, customerStage, releasesCapacity, shouldAutoConfirm, type CustomerStage } from "@/lib/domain/order-status";
 import { priceOrder, requiresPrepay, type CartLine, type PricedItem } from "@/lib/domain/pricing";
 import { vnDateOf, vnDayLabel, vnTimeLabel, type ISODate } from "@/lib/domain/time";
-import type { OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/domain/types";
+import type { Channel, OrderStatus, PaymentMethod, PaymentStatus } from "@/lib/domain/types";
 import type { PlaceOrderInput, PlaceOrderResult } from "@/lib/order-contract";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
@@ -28,7 +28,10 @@ export type PlaceOrderOutcome = {
   created?: { customerId: string; telegram: string[] };
 };
 
-export type PlaceOrderCtx = { now: Date; catalog: Catalog; db?: Db };
+/** Đơn do nhân viên nhập ("Thêm đơn nhanh", §10.4): đã nói chuyện với khách → xác nhận luôn, không Telegram. */
+export type StaffEntry = { actor: string; channel: Channel; overrideCutoff: boolean };
+
+export type PlaceOrderCtx = { now: Date; catalog: Catalog; db?: Db; staff?: StaffEntry };
 
 const trackingToken = () => randomBytes(16).toString("base64url"); // 128 bit → 22 ký tự
 
@@ -86,7 +89,7 @@ async function alternativesFor(batchId: number, req: Requirement, now: Date, db:
   return snap.days.flatMap((d) => d.slots).filter((s) => s.batchId !== batchId && s.level !== "closed" && fits(req, s));
 }
 
-async function rejectionReason(batchId: number, now: Date, db: Executor): Promise<Rejected["reason"]> {
+async function rejectionReason(batchId: number, now: Date, db: Executor, override = false): Promise<Rejected["reason"]> {
   const [row] = await db
     .select({ batch: t.batches, dayStatus: t.serviceDays.status })
     .from(t.batches)
@@ -95,7 +98,9 @@ async function rejectionReason(batchId: number, now: Date, db: Executor): Promis
     .limit(1);
   if (!row) return "cutoff_passed";
   if (row.dayStatus === "paused") return "paused";
-  if (row.dayStatus !== "open" || row.batch.status !== "open" || now >= row.batch.cutoffAt) return "cutoff_passed";
+  if (row.dayStatus !== "open") return "cutoff_passed";
+  if (override) return row.batch.status === "open" || row.batch.status === "closed" ? "slot_full" : "cutoff_passed";
+  if (row.batch.status !== "open" || now >= row.batch.cutoffAt) return "cutoff_passed";
   return "slot_full";
 }
 
@@ -146,9 +151,11 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
     };
   }
 
+  // Nhân viên nhập đơn tự quyết chặn/trả trước sau khi đã gọi khách.
+  const { staff } = ctx;
   const existing = await findCustomerByPhone(phone, db);
-  if (existing?.isBlocked) return { result: { ok: false, reason: "contact_us" } };
-  if (input.paymentMethod === "cod" && requiresPrepay(payment, existing, priced.total)) {
+  if (existing?.isBlocked && !staff) return { result: { ok: false, reason: "contact_us" } };
+  if (!staff && input.paymentMethod === "cod" && requiresPrepay(payment, existing, priced.total)) {
     return { result: { ok: false, reason: "prepay_required" } };
   }
 
@@ -173,15 +180,16 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
         .where(
           and(
             eq(t.batches.id, input.batchId),
-            eq(t.batches.status, "open"),
-            gt(t.batches.cutoffAt, now),
+            // Owner "vượt giờ chốt": nhận cả mẻ đã chốt nhưng chưa vào lò; sức chứa vẫn giữ nguyên.
+            staff?.overrideCutoff ? inArray(t.batches.status, ["open", "closed"]) : eq(t.batches.status, "open"),
+            staff?.overrideCutoff ? undefined : gt(t.batches.cutoffAt, now),
             lte(sql`${t.batches.usedPan} + ${req.pan}`, t.batches.capPan),
             lte(sql`${t.batches.usedBbq} + ${req.bbq}`, t.batches.capBbq),
             sql`EXISTS (SELECT 1 FROM ${t.serviceDays} WHERE ${t.serviceDays.date} = ${t.batches.serviceDate} AND ${t.serviceDays.status} = 'open')`,
           ),
         )
         .returning();
-      if (!batch) throw new Rejected(await rejectionReason(input.batchId, now, tx));
+      if (!batch) throw new Rejected(await rejectionReason(input.batchId, now, tx, staff?.overrideCutoff));
 
       const [day] = await tx
         .update(t.serviceDays)
@@ -205,7 +213,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
 
       if (input.customer.remember && zone && address) await rememberAddress(tx, customer.id, zone.id, address, now);
 
-      const status: OrderStatus = shouldAutoConfirm({ ...customer, paid: false }) ? "confirmed" : "placed";
+      const status: OrderStatus = staff || shouldAutoConfirm({ ...customer, paid: false }) ? "confirmed" : "placed";
       const [order] = await tx
         .insert(t.orders)
         .values({
@@ -213,6 +221,7 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
           seq: day.seq,
           serviceDate: batch.serviceDate,
           batchId: batch.id,
+          channel: staff?.channel ?? "web",
           customerId: customer.id,
           customerName: input.customer.name,
           customerPhone: phone,
@@ -239,15 +248,32 @@ export async function placeOrderCore(input: PlaceOrderInput, phone: string, ctx:
 
       await insertItems(tx, order.id, priced.items);
       await tx.insert(t.orderEvents).values([
-        { orderId: order.id, type: "placed", actor: "customer", data: { channel: "web" }, createdAt: now },
+        {
+          orderId: order.id,
+          type: "placed",
+          actor: staff?.actor ?? "customer",
+          data: { channel: staff?.channel ?? "web", ...(staff?.overrideCutoff ? { overrideCutoff: true } : {}) },
+          createdAt: now,
+        },
         ...(status === "confirmed"
-          ? [{ orderId: order.id, type: "status_changed" as const, actor: "system", data: { from: "placed", to: "confirmed" }, createdAt: now }]
+          ? [
+              {
+                orderId: order.id,
+                type: "status_changed" as const,
+                actor: staff?.actor ?? "system",
+                data: { from: "placed", to: "confirmed" },
+                createdAt: now,
+              },
+            ]
           : []),
       ]);
       return { order, batch, customer };
     });
 
     const { order, batch, customer } = created;
+    if (staff) {
+      return { result: successOf(order, batch, { ...replayCtx, pointName: point?.name ?? null }), created: { customerId: customer.id, telegram: [] } };
+    }
     const today = vnDateOf(now);
     const readyLabel = vnTimeLabel(batch.readyAt);
     const dayLabel = batch.serviceDate === today ? "" : vnDayLabel(batch.serviceDate, today);
