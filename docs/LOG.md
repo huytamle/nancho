@@ -27,7 +27,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M5 — Kitchen Dashboard** | ✅ trên `main` | xem `git log` |
 | **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
-| **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên nhánh (chưa lên `main`) | xem `git log` |
+| **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | M8–M11 (checklist/sổ tay, chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M8 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
@@ -70,7 +70,7 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Lương theo người, kỳ tháng, không tạm ứng, trả ngày 5. Vùng III 20.000đ/giờ (thưởng & bao ăn không tính vào mức tối thiểu). Manager duyệt **bảng công** (không thấy tiền); bảng công của manager do owner gửi; xác nhận bằng PIN trên điện thoại.
 - Kho 2 mức (nguyên liệu → bán thành phẩm), pizza trước (M10), café sau (M11, nhập Excel Sapo).
 - Tiền vào: **pizza → TK TPBank riêng + SePay** (giữ cảnh báo "không khớp"); **café → MoMo kinh doanh** (phí ≥ 500đ/giao dịch qua dịch vụ đối soát không đáng với café biên mỏng) — nhập tay khi đóng ca.
-- Pizza bán **T6–T7–CN** (`data/seed.ts`). Với cửa sổ đặt trước 3 ngày, **Thứ Hai** khách thấy "lò nghỉ" mà chưa có ngày mở (T6 cách 4 ngày) — muốn T2 đặt được T6 thì đặt `ordering.daysAhead = 4`.
+- Pizza bán **T6–T7–CN** (`data/seed.ts`). ✅ **Đặt trước 4 ngày** (`DEFAULT_SETTINGS.ordering.daysAhead = 4`) → Thứ Hai đã thấy & đặt được mẻ Thứ Sáu. Seed không ghi đè `settings` đã có: DB đã seed trước đó (Supabase) phải chạy `UPDATE settings SET value = jsonb_set(value, '{daysAhead}', '4') WHERE key = 'ordering';` — cron daily tự sinh thêm mẻ cho ngày mới trong cửa sổ.
 - Thưởng: quỹ 1% tổng doanh thu tháng (café + pizza) chia theo giờ công; tuân thủ 300.000đ/tháng. Quán đóng 22:00; dọn dẹp sau 22:00 vẫn tính giờ + phụ cấp đêm 30%; ca tối bắt đầu trễ không tính làm thêm (chỉ khi > 8 giờ/ngày).
 
 ## Câu hỏi đang treo cho chủ quán

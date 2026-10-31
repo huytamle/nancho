@@ -148,7 +148,7 @@
 ```
 
 - Đế pan pizza cần ủ trước trong khay nhiều giờ, túi BBQ sous-vide đã nấu sẵn → **giờ chốt sổ quyết định số đế cần chuẩn bị**. Sau giờ chốt, mặc định không nhận đơn cho tối đó (giai đoạn 2 có "suất muộn" từ đế dự phòng — §4, mục 14).
-- Khách có thể đặt **trước cho các ngày tới** (mặc định 3 ngày) — mỗi ngày có giờ chốt riêng.
+- Khách có thể đặt **trước cho các ngày tới** (mặc định 4 ngày — ✅ 31/10/2026, để Thứ Hai đặt được mẻ Thứ Sáu) — mỗi ngày có giờ chốt riêng.
 
 ### 3.2 Từ điển khái niệm (dùng thống nhất trong code, UI và tài liệu)
 
@@ -472,7 +472,7 @@ staff        settings        rate_limits        (GĐ2: waitlist, day_stock)
 
 | key | Giá trị mặc định |
 |---|---|
-| `ordering` | `{ "daysAhead": 3, "closingSoonMin": 45, "fewThreshold": 2, "deliveryWindowMin": 20, "maxQtyPerLine": 10 }` |
+| `ordering` | `{ "daysAhead": 4, "closingSoonMin": 45, "fewThreshold": 2, "deliveryWindowMin": 20, "maxQtyPerLine": 10 }` |
 | `payment` | `{ "prepayPolicy": "risk_based", "prepayOverTotal": 1000000 }` |
 | `shipping` | `{ "freeShipFrom": null }` |
 | `contact` | `{ "hotline": "…", "zaloPhone": "…" }` |
@@ -1293,7 +1293,7 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 2 | Thực đơn & giá chính thức (2 pizza, 2 BBQ, combo, add-on) | ✅ **Đã chốt:** giữ nguyên Phụ lục A |
 | 3 | Bếp đặt ở đâu? Rêu chỉ là điểm nhận hay cũng là bếp? Địa chỉ Rêu? | ✅ **Đã chốt:** Rêu là bếp + điểm nhận. ⏳ Còn thiếu: địa chỉ & toạ độ Rêu (dùng cho footer pháp lý, bản đồ, điểm xuất phát tuyến giao) |
 | 4 | Các mẻ trong ngày, giờ chốt, sức chứa mỗi mẻ (khay pizza / phần BBQ) | 17:00 · 18:00 · 19:00; chốt 15:30; 4 pizza + 4 BBQ mỗi mẻ |
-| 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | ✅ **Pizza bán T6–T7–CN** (giai đoạn đầu, `data/seed.ts`); đặt trước 3 ngày |
+| 5 | Ngày hoạt động trong tuần; đặt trước tối đa bao nhiêu ngày | ✅ **Pizza bán T6–T7–CN** (giai đoạn đầu, `data/seed.ts`); ✅ **đặt trước 4 ngày** (T2 đặt được T6) |
 | 6 | Danh sách Thôn/Khu phố, phí ship từng nơi, cách nhóm tuyến | Phụ lục A (placeholder) |
 | 7 | Chính sách thanh toán: COD cho tất cả? Khi nào bắt trả trước? | `risk_based` (khách từng bom hàng hoặc đơn ≥ 1.000.000đ) |
 | 8 | Định lượng (BOM): gram phô mai, pepperoni, trọng lượng túi sườn… | Phụ lục A |

@@ -142,7 +142,7 @@ export type ContactSettings = { hotline: string; zaloPhone: string };
 export type OpsSettings = { cashTolerance: number; pettyFloat: number };
 
 export const DEFAULT_SETTINGS = {
-  ordering: { daysAhead: 3, closingSoonMin: 45, fewThreshold: 2, deliveryWindowMin: 20, maxQtyPerLine: 10 },
+  ordering: { daysAhead: 4, closingSoonMin: 45, fewThreshold: 2, deliveryWindowMin: 20, maxQtyPerLine: 10 },
   payment: { prepayPolicy: "risk_based", prepayOverTotal: 1_000_000 },
   shipping: { freeShipFrom: null },
   ops: { cashTolerance: 20_000, pettyFloat: 1_000_000 },

@@ -60,7 +60,7 @@ describe("seed", () => {
 
   it("settings đọc lại khớp mặc định", async () => {
     const s = await loadSettings(db);
-    expect(s.ordering.daysAhead).toBe(3);
+    expect(s.ordering.daysAhead).toBe(4);
     expect(s.contact.hotline).toMatch(/^0\d{9}$/);
   });
 });
@@ -130,7 +130,7 @@ describe("getOvenStatus với dữ liệu seed", () => {
       ["18:00", 4, 4, "plenty"],
       ["19:00", 4, 4, "plenty"],
     ]);
-    // daysAhead = 3 → T7..T3; T2/T3 nghỉ.
+    // daysAhead = 4 → T7..T4; T2–T4 nghỉ.
     expect(s.upcoming.map((d) => [d.label, d.hasCapacity])).toEqual([
       ["Tối nay", true],
       ["Mai", true],
@@ -143,9 +143,8 @@ describe("getOvenStatus với dữ liệu seed", () => {
     expect(late).toMatchObject({ kind: "after_cutoff", nextOpenDate: "2026-11-08" });
   });
 
-  it("T2 lò nghỉ, T6 ngoài cửa sổ đặt trước 3 ngày → chưa có ngày mở; T3 → mở lại T6", async () => {
-    expect(await getOvenStatus(at("2026-11-09" as ISODate, "10:00"), db)).toMatchObject({ kind: "day_off", nextOpenDate: null });
-    expect(await getOvenStatus(at("2026-11-10" as ISODate, "10:00"), db)).toMatchObject({ kind: "day_off", nextOpenDate: "2026-11-13" });
+  it("T2 lò nghỉ → day_off, đặt trước 4 ngày nên đã thấy T6", async () => {
+    expect(await getOvenStatus(at("2026-11-09" as ISODate, "10:00"), db)).toMatchObject({ kind: "day_off", nextOpenDate: "2026-11-13" });
   });
 
   it("phản ánh suất đã dùng và trạng thái tạm ngưng", async () => {
