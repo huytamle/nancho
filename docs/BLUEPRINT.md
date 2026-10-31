@@ -1,7 +1,8 @@
 # THE HEAT PIZZA — Blueprint Web App Đặt Món `theheatpizza.vn`
 
 > **Loại tài liệu:** Kiến trúc tổng thể + đặc tả sản phẩm, dùng làm "nguồn sự thật" cho AI Agent triển khai.
-> **Phiên bản:** 1.6 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Phiên bản:** 1.7 · 31/10/2026 · **Trạng thái:** Đề xuất. Các mục ở §16 cần chủ quán chốt; trong lúc chờ, Agent dùng **giá trị mặc định** ghi ở đó. Mục đã chốt được đánh dấu ✅.
+> **Thay đổi 1.7 (M9 + kế hoạch mới, chủ quán duyệt 31/10/2026):** M9 xong (§15 M9, §17.7) · ✅ thêm **M9.5 — Gói "Ngày bán"** (§18: khoá lò khẩn cấp, giữ suất có hạn cho đơn trả trước, mã ghi nắp hộp, bàn giao tiền shipper, chấm điểm khẩu vị) · M10 thêm **công nợ nhà cung cấp**, hàng bán lại, **giá vốn & biên lợi nhuận theo món**, kiểm nhanh **ABC** cuối ca (§17.8) · M11 thêm báo cáo tối & trợ thủ Telegram (§17.10) · quyết định §16 #19–#22 · lỗi action mới của M9 (`clocked_in`, `not_clocked_in`, `wrong_pin`, `rate_limited`, `unresolved`, `period_open`, `missing_rate`, `below_min`).
 > **Thay đổi 1.6 (M8):** checklist & sổ tay xong (§15 M8, §17.5–17.6) · thư viện `marked` (§5.2) · lỗi action mới `value_required`, `photo_needed`, `duplicate`.
 > **Thay đổi 1.5:** ✅ Thêm **vận hành nội bộ** `/admin/van-hanh` (§17, M7–M11): vai trò nhiều giá trị, ca & két, hộp chi, chi phí qua Telegram, checklist, sổ tay, chấm công, bảng công/lương, kho 2 mức, chỉ số · route mới ở §5.4 · ✅ pizza nhận tiền qua TK **TPBank riêng** (SePay), café giữ **MoMo kinh doanh** (§17.9) · pizza bán T6–CN (§16 #5).
 > **Thay đổi 1.4 (M2):** `slot_templates` thêm `UNIQUE (weekday, ready_time)`; thêm CHECK thời gian mẻ (`cutoff_at ≤ oven_at ≤ ready_at`), `order_items.line_total = unit_price × qty` (§6.2) · `ensureBatches` chỉ sinh mẻ cho ngày **chưa có** `service_days` (§15 M2) · dev dependency `tsx` cho script seed (§5.2).
@@ -33,6 +34,7 @@
 15. [Lộ trình triển khai (Milestones cho Agent)](#15-lộ-trình-triển-khai-milestones-cho-agent)
 16. [Quyết định cần chủ quán chốt (kèm mặc định)](#16-quyết-định-cần-chủ-quán-chốt-kèm-mặc-định)
 17. [Vận hành nội bộ `/admin/van-hanh` (M7–M11)](#17-vận-hành-nội-bộ-adminvan-hanh-m7m11)
+18. [Gói "Ngày bán" (M9.5)](#18-gói-ngày-bán-m95)
 - [Phụ lục A — Seed data mẫu](#phụ-lục-a--seed-data-mẫu)
 - [Phụ lục B — Bộ dữ liệu kiểm thử Prep (khớp ví dụ trong brief)](#phụ-lục-b--bộ-dữ-liệu-kiểm-thử-prep-khớp-ví-dụ-trong-brief)
 
@@ -1274,16 +1276,25 @@ Mỗi milestone là một PR (hoặc chuỗi PR nhỏ) có thể review độc l
 - **Chấp nhận:** `worktime.ts`/`payroll.ts` coverage ≥ 95% (ca qua nửa đêm, ngày lễ, ban đêm, đổi đơn giá giữa tháng); int test: **DTO cho `manager` không chứa trường tiền lương**, manager không tự xác nhận/duyệt bảng công của mình, bảng công đã khoá không sửa được.
 - Ghi chú triển khai: migration `0004_payroll` (6 bảng: `time_entries` — partial unique một lượt mở/người; `shift_plans` UNIQUE người+ngày, `end > start`; `holidays` (`date` PK, hệ số 1–5); `pay_rates` UNIQUE người+`effective_from`; `timesheets` — `snapshot IS NULL` ⇔ `draft`; `payslips` — `paid` ⇔ `paid_at`). Logic thuần `lib/domain/worktime.ts` (phân loại từng **phút** — cắt giây; ngày công = ngày VN của giờ vào; lễ theo ngày dương lịch của chính phút đó; làm thêm = phút thứ 481+ của ngày công, ngày lễ không cộng làm thêm; đi muộn > 5′, `late_out` > 15′ so với lịch; quên ra ca = lượt mở từ trước mốc 03:00 gần nhất) và `lib/domain/payroll.ts` (đơn giá theo ngày công → đổi giá giữa tháng tách dòng; dòng `base` 100% mọi phút + `night` 30% (+20% phần làm thêm ban đêm — BLLĐ Đ.98 k.3) + `overtime` +50% + `holiday` (hệ số − 1); quỹ thưởng chia số dư lớn nhất → tổng đúng bằng quỹ; `canManageTime`: không phải của mình, của quản lý chỉ owner; owner không chấm công). DAL `lib/server/dal/payroll.ts`; action `app/actions/time.ts` (khung chung `lib/server/ops/run.ts`, dùng lại cho `app/actions/ops.ts`). **Quên ra ca** → lượt đóng với 0 phút + cờ `forgot_out` (cron, hoặc ngay khi người đó vào ca lần sau); phải sửa giờ trước khi gửi bảng công (`unresolved`). Nháp tính sống từ `time_entries`; [Gửi] chụp `snapshot` + `sha256(canonicalJson)`; xác nhận nhập lại PIN (rate-limit 5/15′), lưu IP + user-agent; đã gửi/xác nhận → mọi sửa giờ trong kỳ `locked`; "Chưa đồng ý" → về nháp + Telegram. Phiếu lương chỉ từ bảng công `acknowledged`, tính lại không đụng phiếu đã duyệt; đơn giá có hiệu lực trong kỳ đã duyệt → `locked`. Thưởng tuân thủ: đi muộn (snapshot), % mục checklist mở/trong/đóng ca của mẫu gắn vai người đó trong các ngày làm, lệch két lớn nhất ở ca người đó đóng; owner chọn Theo tiêu chí/Có/Không + điều chỉnh ± có lý do. Tab `cong` (mọi người) · `luong` (owner); `&ky=YYYY-MM`, `&tuan=<ngày>`. Cron daily (15:45 VN) gắn cờ quên ra ca thay cho "03:00" — kết quả như nhau vì mốc so là 03:00; ngày 1/3/`payDay` mỗi việc một lần (`ops_events`). Chưa làm: làm tròn phút (tuỳ chọn ở Cài đặt), ngày nghỉ hằng tuần 200%, kỳ điều chỉnh sau khi khoá.
 
-### M10 — Kho 2 mức cho pizza (≈ 4 ngày)
-- Cột kho trên `ingredients`, `production_formulas`, `stock_moves`, `stock_counts`; nhập từ `/chi`, sản xuất, trừ khi Ra lò, huỷ, kiểm kê tuần, cột Tồn ở tab Chuẩn bị, cảnh báo hết hạn/dưới mức.
-- **Chấp nhận:** `stock.ts` coverage ≥ 95% (bình quân gia quyền, đổi đơn vị, sản xuất, hao hụt); int test: Ra lò hai lần chỉ trừ một lần, `no_show` vẫn trừ, `cancelled` không trừ; với Phụ lục B tồn sau ngày khớp từng dòng.
+### M9.5 — Gói "Ngày bán" (≈ 2–3 ngày) — làm song song với chuẩn bị ra mắt
+- §18: khoá lò khẩn cấp (nút gạt + `/khoalo` `/molo` + danh sách đơn bị ảnh hưởng + ghi hoàn tiền), giữ suất 15 phút cho đơn trả trước chưa nhận tiền, thẻ mã ghi nắp hộp (tab Mẻ · Đơn · Giao), bàn giao tiền COD của shipper, chấm điểm khẩu vị trên `/o/[token]`.
+- **Chấp nhận:** domain `hold.ts`, `box-code.ts` coverage ≥ 95%; int test: giữ suất hết hạn trả suất **đúng một lần** khi nhiều request song song, tiền SePay đến sau khi hết hạn (còn suất → giữ lại & xác nhận; hết suất → ⚠ cần hoàn), lò khoá → `placeOrder` trả `paused`, `/khoalo` từ người lạ/nhân viên không có quyền bị bỏ qua, huỷ đơn đã trả → `refunded` + bản ghi hoàn, bàn giao lệch → Telegram, chấm điểm chỉ khi `completed` và một lần mỗi đơn; e2e: khoá lò → trang `/` hiện tạm ngưng; đơn trả trước hiện đếm ngược; thẻ nắp hộp đúng `THU`/`CK`; khách chấm điểm.
 
-### M11 — Chỉ số & kho café (≈ 2–3 ngày)
-- Bảng chỉ số §17.10; định lượng đồ uống; nhập Excel báo cáo Sapo (cần file mẫu từ chủ quán) — chưa có thì kiểm kê tuần.
-- **Chấp nhận:** manager không thấy chi phí nhân sự; số liệu khớp bộ dữ liệu mẫu một tháng.
+### M10 — Kho 2 mức cho pizza (≈ 5 ngày)
+- Cột kho trên `ingredients`, `production_formulas`, `stock_moves`, `stock_counts`; nhập từ `/chi`, sản xuất, trừ khi Ra lò, huỷ, kiểm kê tuần, cột Tồn ở tab Chuẩn bị, cảnh báo hết hạn/dưới mức.
+- ✅ Thêm (31/10/2026): **công nợ nhà cung cấp** (`/no`, `/trano`, `/congno`), **hàng bán lại** (`goods`: thùng 24 lon → giá vốn/lon), **giá vốn & biên lợi nhuận theo món** (gồm bao bì: ly, đá, ống hút), **kiểm nhanh ABC** cuối ca (§17.8).
+- **Chấp nhận:** `stock.ts` coverage ≥ 95% (bình quân gia quyền, đổi đơn vị, sản xuất, hao hụt, giá vốn món, chọn mục đếm xoay vòng B); int test: Ra lò hai lần chỉ trừ một lần, `no_show` vẫn trừ, `cancelled` không trừ; với Phụ lục B tồn sau ngày khớp từng dòng; `/no` nhập kho + tăng công nợ, `/trano` ghi chi + giảm công nợ (không ghi chi hai lần), lệch kiểm nhanh → Telegram.
+
+### M11 — Chỉ số, kho café & trợ thủ Telegram (≈ 3–4 ngày)
+- Bảng chỉ số §17.10 (tách theo mảng café · pizza); định lượng đồ uống; nhập Excel báo cáo Sapo (cần file mẫu từ chủ quán) — chưa có thì kiểm kê tuần.
+- ✅ Thêm (31/10/2026): **báo cáo tối** (pizza 20:15 các ngày bán + tổng hợp cả ngày ngay sau khi đóng ca café), trợ thủ Telegram (`/lich`, `/pl`, nhắc đi chợ, tóm tắt góp ý tuần) (§17.10).
+- **Chấp nhận:** manager không thấy chi phí nhân sự (kể cả `/pl` trong nhóm); số liệu khớp bộ dữ liệu mẫu một tháng; báo cáo tối gửi một lần mỗi ngày.
 
 ### Giai đoạn 2 (sau ra mắt, theo dữ liệu thật)
-Suất muộn từ đế dự phòng · Danh sách chờ khi kín lò · Tồn kho theo ngày (`day_stock`) cho túi BBQ · Ship chung tuyến · Tem tích điểm & giới thiệu bạn · Zalo ZNS · Nhãn in dán hộp · Link bàn giao cho Rêu có token (xem không cần đăng nhập) · Báo cáo tuần (doanh thu, tỉ lệ lấp đầy lò, khách quay lại, hiệu quả từng `src`).
+Suất muộn từ đế dự phòng · Danh sách chờ khi kín lò · Tồn kho theo ngày (`day_stock`) cho túi BBQ · Ship chung tuyến · Tem tích điểm & giới thiệu bạn · Zalo ZNS · Nhãn in dán hộp (tem nhiệt 58 mm có QR → trang đơn/chấm điểm, thay thẻ ghi bút lông ở §18.3) · Link bàn giao cho Rêu có token (xem không cần đăng nhập) · Báo cáo tuần (doanh thu, tỉ lệ lấp đầy lò, khách quay lại, hiệu quả từng `src`) · Trang đơn hiện "Đang giao — còn *n* điểm trước bạn" (theo thứ tự tuyến, **không** GPS) · Góp ý qua Zalo/Messenger.
+
+### Giai đoạn 3 (khi ≥ 4 nhân viên)
+**Ca linh hoạt:** tự chép lịch tuần sau vào giờ cố định (mặc định tối Thứ Năm) + báo nhóm; nhân viên **đăng ký nhận ca** trống; **đổi/nhường ca** (A đề nghị → B nhận → quản lý duyệt, cùng vai thì tự duyệt); **xin nghỉ** báo trước ≥ 2 ngày (quản lý duyệt) hoặc **đột xuất** `/nghi` → bot đăng "ai nhận ca …?" lên nhóm, người bấm đầu tiên nhận. Lương không cần nối thêm — tính theo giờ chấm công thực tế (§17.7), lịch chỉ dùng cho đi muộn/`late_out`. Chưa làm sớm vì 2 nhân viên nhắn nhau nhanh hơn thao tác app.
 
 ---
 
@@ -1311,6 +1322,10 @@ Agent dùng **mặc định** để không bị chặn; chủ quán thay số li
 | 16 | Quán có mở sau 22:00 không? | ✅ Không; giờ dọn dẹp sau 22:00 vẫn tính + phụ cấp đêm 30%; ca trễ không tính làm thêm (§17.7). Quản lý: gán trong app |
 | 17 | Tài khoản nhận tiền | ✅ **Đã chốt:** pizza → TPBank riêng + SePay; café → MoMo kinh doanh (§17.9) |
 | 18 | Vận hành: lương theo người, kỳ tháng, không tạm ứng, trả ngày 5; hộp chi 1.000.000đ; chi từ hộp chi hoặc tiền túi rồi hoàn; vùng III (20.000đ/giờ) | ✅ **Đã chốt** 31/10/2026 (§17) |
+| 19 | Quỹ thưởng doanh thu tách café/pizza? | ✅ **Giữ gộp** (31/10/2026): 2 người làm cả hai mảng, tách thì phải gắn mảng cho từng giờ công (thêm thao tác, dễ sai); quỹ chung khuyến khích hỗ trợ nhau T6–CN. Tiền vào đã tách tài khoản (§17.9); chỉ số M11 tách **theo mảng**. Xem lại khi có đội pizza riêng |
+| 20 | Giữ suất cho đơn chưa trả tiền | ✅ **15 phút**, chỉ cho đơn **bắt buộc trả trước** (§18.2) — 8 phút hơi gấp với khách mở app ngân hàng lần đầu; COD và chuyển khoản tự nguyện không bị huỷ |
+| 21 | Theo dõi shipper thời gian thực (GPS) như app giao hàng? | ✅ **Không** — 1 shipper, giao trong thị trấn; web app không lấy được GPS khi chạy nền (cần app riêng), tốn pin, nhạy cảm quyền riêng tư. Thay bằng "còn *n* điểm trước bạn" (Giai đoạn 2) |
+| 22 | Mã ghi nắp hộp: bút lông hay tem in QR? | ✅ **Bút lông trước** (§18.3) — không cần máy in/giấy tem; tem nhiệt có QR ở Giai đoạn 2 nếu sản lượng tăng |
 
 ---
 
@@ -1456,6 +1471,16 @@ submitted ─(nhân viên "Chưa đồng ý" + lý do)─▶ draft
 - **Kiểm kê tuần** `stock_counts`: đếm thật các mặt hàng `track_stock` → dòng `adjust` = thật − sổ → **hao hụt (số lượng & tiền)**.
 - Tab Chuẩn bị (§10.2) thêm cột "Tồn / đủ / thiếu" cạnh mỗi nguyên liệu; dưới `par_level` hoặc sắp hết hạn → Telegram + mục trong checklist mở ca.
 
+**Bổ sung M10 (✅ 31/10/2026):**
+
+- **Công nợ nhà cung cấp** — lấy hàng trước, trả sau (VD "lấy nợ cô Nhiều 3 thùng Sting, 2 thùng Pepsi"):
+  - `suppliers` (`id`, `name` unique, `aliases` text[], `phone` null, `is_active`) · `supplier_bills` (`id`, `supplier_id`, `received_at`, `items` jsonb `[{ ingredient_id?, text, qty, unit, amount? }]`, `amount` int null — chưa biết giá thì để trống, điền khi trả, `photo` → `ops_files`, `status` `open·paid·cancelled`, `paid_expense_id` → `expenses`, `created_by`, Telegram chat/msg id).
+  - Telegram: `/no Cô Nhiều 3 thùng sting, 2 thùng pepsi 480k` + ảnh trả lời → phiếu nợ; dòng khớp `aliases` nguyên liệu → hỏi [Nhập kho] như `/chi` (giá vốn ghi **khi nhận hàng**). `/trano Cô Nhiều 480k [#tui|#ck]` → ghi **một** chi phí (dòng tiền ghi **khi trả**) và đóng các phiếu cũ nhất của NCC đó đến đủ số tiền; thừa/thiếu → nhắc. `/congno` → nợ còn lại theo NCC. Trong app: tab Kho → Công nợ.
+  - Chi phí của hàng đã nhập kho bằng phiếu nợ **không** tính lại giá vốn lần hai (chi phí ghi `ref` tới phiếu).
+- **Hàng bán lại** (`goods`): Pepsi, Sting, bánh… `purchase_unit` "thùng", `purchase_factor` 24 → nhập 1 thùng 240.000đ = 24 lon × 10.000đ (bình quân gia quyền).
+- **Giá vốn & biên lợi nhuận theo món:** giá vốn món = Σ định lượng (`recipe_lines`, đồ uống ở M11) × `avg_cost` (bán thành phẩm lấy giá vốn qua `production_formulas` — tính luôn mức 2) + **bao bì/đồ đi kèm** (ly, nắp, đá, ống hút, hộp — là nguyên liệu `goods` trong định lượng). Tab Kho → "Biên lợi nhuận": giá bán · giá vốn · lãi gộp · % — VD Pepsi 15.000 − 10.000 − ly/đá/ống hút ~1.000 = **4.000đ (27%)**. Món café bán qua Sapo: giá bán nhập trong bảng món café (M11). Chỉ owner/manager xem.
+- **Kiểm nhanh cuối ca — đếm xoay vòng ABC:** `ingredients.count_class` `A·B·C`. **A** (5–6 món đắt/dễ hư: mozzarella, sườn, đế, sữa tươi, hạt cà phê) đếm **mỗi ca**; **B** mỗi ca đếm 3 món lâu chưa đếm nhất (xoay vòng, hết vòng ≈ 1 tuần); **C** chỉ kiểm kê tuần. Màn "Kiểm nhanh" trong tab Việc lúc đóng ca, theo vai trò (barista: quầy café; bếp: tủ bếp), **đếm mù** (không hiện số sổ sách trước khi nhập) → `stock_counts` kind `quick` → lệch vượt ngưỡng (% theo món) → Telegram. ~2 phút/ca.
+
 ### 17.9 Dòng tiền vào: hai tài khoản tách theo mảng
 
 ✅ Chủ quán chốt 31/10/2026:
@@ -1475,6 +1500,12 @@ submitted ─(nhân viên "Chưa đồng ý" + lý do)─▶ draft
 | Chi phí nhân sự % doanh thu, prime cost | ✅ | ❌ |
 | Checklist hoàn thành %, đi muộn, tỉ lệ lấp đầy lò | ✅ | ✅ |
 
+**Báo cáo tối & trợ thủ Telegram (M11, ✅ 31/10/2026):**
+- **Pizza 20:15** các ngày bán (T6–CN): doanh thu pizza (CK/COD/đã thu), đơn huỷ/bom, bàn giao COD (§18.4), điểm khẩu vị trong ngày (§18.5), tồn nhóm A sau Ra lò, việc cần làm (thiếu so với `par_level` cho ngày bán kế tiếp → "cần đặt …"). Cần cron thứ hai → Vercel Pro (đã khuyến nghị cho ra mắt).
+- **Cả ngày** gửi ngay sau khi đóng ca café (không cần cron): doanh thu café theo Sapo + pizza, tiền mặt/CK, lệch két & hộp chi, checklist ca (% + ảnh), kiểm nhanh ABC, chi phí trong ngày. Một lần mỗi ngày (`ops_events`).
+- Lệnh: `/lich` (lịch ca tuần), `/pl` (P&L tháng theo mảng — **chỉ trả lời trong chat riêng với owner**, vì có chi phí nhân sự), nhắc đi chợ (dưới `par_level` hoặc trước ngày bán), tóm tắt góp ý tuần (§18.5). Lệch tiền mặt đã có từ M7.
+- AI chỉ dùng cho **tóm tắt góp ý tuần** (tuỳ chọn, bật bằng env khoá API): model rẻ nhất họ Claude hiện hành (Haiku); vài chục góp ý/tuần nên chi phí không đáng kể. Không có khoá → gửi danh sách góp ý thô.
+
 Kho café (M11): định lượng đồ uống + **nhập file Excel xuất từ báo cáo "bán hàng theo mặt hàng" của Sapo** (tải lên trong app → đọc → trừ kho). Trước khi có file mẫu: chỉ kiểm kê tuần hạt cà phê, sữa, đá… và tính lượng dùng = tồn đầu + nhập − tồn cuối.
 
 ### 17.11 Route, env, cron
@@ -1483,9 +1514,47 @@ Kho café (M11): định lượng đồ uống + **nhập file Excel xuất từ
 - Env mới: `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_OPS_CHAT_ID` (tuỳ chọn, mặc định = `TELEGRAM_CHAT_ID`).
 - `settings.ops` (M7): `{ cashTolerance: 20000, pettyFloat: 1000000 }` — owner sửa trong tab Ca & két; M9 thêm `storeIps`; từ khoá nhóm chi đang là hằng `DEFAULT_EXPENSE_KEYWORDS` (`lib/domain/expense-command.ts`) · `settings.payroll`: `{ minHourly: 20000, payDay: 5, revenueBonusPct: 1, complianceBonus: … }`.
 - Cron daily thêm: gắn cờ quên ra ca, cảnh báo hết hạn/dưới mức tồn; ngày 1: tổng hợp chi phí + bảng công nháp; ngày 3: nhắc ai chưa xác nhận; ngày 5: nhắc trả lương.
+- Lệnh Telegram theo milestone: M7 `/chi` `/chihuy` `/tonghop` `/start` · M9.5 `/khoalo` `/molo` · M10 `/no` `/trano` `/congno` · M11 `/lich` `/pl`. Bot vẫn giữ privacy mode bật (chỉ đọc lệnh `/…` và tin trả lời bot).
 - Trang admin không tính vào ngân sách JS của `/` (§13.1); vẫn giữ nhẹ cho máy Android tầm trung.
 
 ---
+
+## 18. Gói "Ngày bán" (M9.5)
+
+> ✅ Chủ quán duyệt 31/10/2026. Năm việc nhỏ giảm rủi ro trong giờ bán pizza (T6–CN, 17:00–19:30). Không thêm route mới — dùng `/admin/kitchen`, `/admin/van-hanh`, `/o/[token]`, bot Telegram.
+
+### 18.1 Khoá lò khẩn cấp (mất điện · lò hỏng · mưa bão)
+
+- Dùng lại `service_days.status = paused` + `pause_message` (§3.2, §7.2) — Oven Bar & `placeOrder` đã xử lý `paused`. Thêm lối **1 chạm**: nút gạt "Khoá lò" ở đầu `/admin/kitchen` và tab Ca & két của `/admin/van-hanh` (owner · manager · kitchen) → chọn lý do có sẵn (Mất điện · Lò gặp sự cố · Mưa bão, không giao được · Khác…) → xác nhận → khoá **hôm nay** (tuỳ chọn: cả ngày mai). Telegram: `/khoalo [lý do]`, `/molo` — chỉ người đã liên kết có vai owner/manager/kitchen; người khác → bỏ qua như §17.4.
+- Sau khi khoá: hiện **"Đơn bị ảnh hưởng"** (và gửi cùng nội dung vào nhóm): các đơn hôm nay chưa `completed/cancelled/no_show` — `#seq`, tên, SĐT ([Gọi]), mẻ, **đã trả x đ → cần hoàn** / COD. Mỗi đơn: [Huỷ — quán tạm ngưng] (trả suất như huỷ thường). Đơn đã trả: huỷ → `payment_status = refunded` sau khi người dùng ghi **hoàn tiền** (số tiền, CK/tiền mặt, ghi chú) → bản ghi `payments` `provider = 'refund'`, `amount` âm, + `order_events`. App không tự chuyển tiền — chỉ liệt kê & ghi nhận.
+- Trang `/o/[token]` của đơn bị huỷ vì khoá lò: hiện lời nhắn tạm ngưng + "Quán sẽ gọi/hoàn tiền cho bạn", **ẩn QR** chuyển khoản.
+
+### 18.2 Giữ suất có hạn cho đơn trả trước
+
+- Vấn đề: đơn chuyển khoản chưa trả **không bao giờ tự huỷ** → suất cuối của mẻ 18:00 bị giữ ảo, khách sau thấy "kín lò".
+- Áp dụng **chỉ** cho đơn mà `requiresPrepay` bắt buộc chuyển khoản trước (§7.4) và `payment_status = unpaid`: `orders.hold_until = created_at + settings.payment.holdMinutes` (mặc định **15**). Chuyển khoản *tự nguyện* và COD không có hạn (chưa thấy tiền đến lúc giao → shipper thu như COD — thẻ nắp hộp hiện `THU`).
+- **Hết hạn:** `releaseExpiredHolds(now, tx)` — một câu `UPDATE orders SET status='cancelled' … WHERE status='placed' AND payment_status='unpaid' AND hold_until < now RETURNING` rồi trả suất **đúng một lần** (dùng lại logic huỷ, `order_events` actor `system`, lý do `hold_expired`). Gọi ở đầu transaction `placeOrder` và trong `getOvenSnapshot` → **không cần cron**, suất trả về ngay khi có người xem/đặt. Domain thuần `lib/domain/hold.ts` (`holdUntil`, `isExpired`, nhãn đếm ngược).
+- **Tiền đến sau khi hết hạn** (SePay): mẻ còn suất → giữ lại suất, mở lại đơn, `paid` + xác nhận như thường; hết suất → giữ đơn `cancelled`, ghi tiền, Telegram ⚠ "CK sau khi hết giữ suất — cần hoàn hoặc chuyển mẻ".
+- UI: màn thành công & `/o/[token]` hiện "Giữ suất đến 17:32 · còn 12:40" (dùng `formatRemaining`); hết hạn → "Hết thời gian giữ suất — đặt lại" (giỏ cũ còn). Bếp: đơn đang giữ có nhãn "chờ CK · còn mm:ss".
+
+### 18.3 Mã ghi nắp hộp (bút lông, 3 giây)
+
+- Mỗi đơn có **thẻ nắp hộp** chữ rất to (số ≥ 40 px, khung đậm, tương phản cao) ở tab **Mẻ** (theo mẻ đang đóng gói), **Đơn** và **Giao** — người đóng gói chép y nguyên lên góc nắp bằng bút lông dầu; shipper khớp hộp ↔ đơn bằng cùng mã.
+- **Quy ước mã** (domain thuần `lib/domain/box-code.ts`, ≤ 12 ký tự): `12` (số đơn trong ngày, khoanh tròn) · `T289` = **thu** 289.000đ (COD, hoặc CK chưa về) · `CK` = đã chuyển khoản, **không thu** · `+2S` = thêm 2 hũ sốt (chữ tắt add-on lấy từ `products.short`) · `R` = nhận tại Rêu. VD `⑫ T289 +2S`, `⑦ CK`. Thẻ còn hiện dòng phụ (không cần chép): tên khách, khu vực, giờ giao.
+- Nhiều hộp cho một đơn: thẻ ghi `1/3`, `2/3`… sau mã.
+- Tem in có QR (→ trang đơn, chấm điểm) để Giai đoạn 2 (máy in nhiệt 58 mm + giấy tem).
+
+### 18.4 Bàn giao tiền COD của shipper
+
+- Tab **Giao** thêm "Bàn giao tiền" cho ngày đang xem: theo từng shipper (người bấm Đã giao — `order_events.actor`), danh sách đơn COD `completed` chưa bàn giao + tổng **đáng có**. Người nhận (owner · manager · kitchen, ≠ shipper) nhập **số nhận thật** (đếm mù như §17.3) → `cash_handovers` (`id`, `service_date`, `shipper_id`, `order_ids` int/uuid[], `expected`, `received`, `received_by`, `note`, `created_at`); mỗi đơn chỉ bàn giao một lần. Lệch ≠ 0 → Telegram (vượt `cashTolerance` → ⚠).
+- Tiền nhận được bỏ vào két → vẫn nằm trong "COD pizza hoàn tất trong ca" của số đáng có khi đóng ca (§17.3) — bàn giao chỉ để biết **ai** làm lệch.
+
+### 18.5 Chấm điểm khẩu vị 1 chạm
+
+- Mục đích: tinh chỉnh công thức những tuần đầu (khách thị trấn ít khi chủ động góp ý — chỉ không quay lại).
+- `/o/[token]` khi đơn `completed` (trong 7 ngày): mỗi món 3 mức **😋 Ngon · 🙂 Được · 😕 Chưa hợp**; chọn 😕 → chip gợi ý theo loại món (BBQ: *ngọt hơn · cay hơn · mềm hơn · ít mặn*; pizza: *nhiều phô mai hơn · đế mỏng hơn · ít dầu*) + ô góp ý ≤ 300 ký tự. Một lần mỗi đơn, sửa được trong 24 giờ. Server Action có rate-limit; không cần đăng nhập (token đơn là đủ).
+- Bảng `feedback` (`order_id` unique, `ratings` jsonb `{ productId: 1|2|3 }`, `tags` jsonb, `comment` null, `created_at`, `updated_at`). Gửi Telegram ngay: "⭐ #12 Pepperoni 😋 · BBQ 😕 *ngọt hơn* — 'hơi mặn'". Tổng hợp tuần ở M11 (§17.10). Tab Sổ tay → trang công thức hiện điểm trung bình 4 tuần của món đó (owner/manager).
+- `/chinh-sach`: thêm mục góp ý (lưu cùng đơn, xoá theo thời hạn đơn).
 
 ## Phụ lục A — Seed data mẫu
 

@@ -30,7 +30,9 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M8 — Checklist & Sổ tay** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| M10–M11 (kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M10 là milestone kế tiếp** | — |
+| **M9.5 — Gói "Ngày bán"** | 📝 đặc tả Blueprint §18 (chủ quán duyệt 31/10/2026); **milestone kế tiếp**, làm song song chuẩn bị ra mắt | — |
+| M10–M11 (kho + công nợ NCC + biên lợi nhuận; chỉ số + trợ thủ Telegram) | 📝 Blueprint §15, §17.8, §17.10 (đã bổ sung 31/10/2026) | — |
+| Giai đoạn 3 — ca linh hoạt (đăng ký/đổi ca, xin nghỉ) | 📝 khi ≥ 4 nhân viên (§15) | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -223,6 +225,19 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 2. Tab **Lương**: nhập đơn giá giờ từng người (≥ 20.000đ — vùng III), ngày lễ năm nay (Tết âm lịch!), kiểm tra cài đặt thưởng.
 3. Tab **Công**: đang ở quán, bắt Wi-Fi quán → [Đây là Wi-Fi quán]; xếp lịch ca tuần (Chép tuần trước cho tuần sau).
 4. Hợp đồng lao động nên có điều khoản đồng ý xác nhận bảng công/lương qua ứng dụng (§17.7).
+
+## Kế hoạch sau M9 — chủ quán duyệt 31/10/2026 (Blueprint 1.7)
+
+- Thứ tự: **M9.5 Ngày bán** (§18) → **M10** kho (+ công nợ NCC `/no` `/trano` `/congno`, hàng bán lại, giá vốn & biên lợi nhuận theo món, kiểm nhanh ABC) → **M11** chỉ số (tách theo mảng) + báo cáo tối + trợ thủ Telegram → Giai đoạn 3 ca linh hoạt.
+- Quyết định (§16 #19–#22): quỹ thưởng **giữ gộp**; giữ suất **15 phút** chỉ cho đơn bắt buộc trả trước; **không** theo dõi GPS shipper; mã nắp hộp **bút lông trước**, tem QR sau.
+- Đã có sẵn, không làm lại: xem công thức (Sổ tay M8), KDS (màn Bếp M5), báo lệch tiền mặt Telegram (M7).
+- "Model Luna" chủ quán nhắc: không xác minh được — Blueprint ghi dùng model rẻ nhất họ Claude (Haiku) cho tóm tắt góp ý tuần, tuỳ chọn.
+
+## M9.5 — lưu ý trước khi làm
+
+- `paused` đã chặn `placeOrder` (M4) và hiện ở Oven Bar — §18.1 chỉ thêm lối 1 chạm, `/khoalo`, danh sách đơn bị ảnh hưởng, ghi hoàn tiền (`payments.provider` thêm `'refund'` → cần migration enum/text).
+- `releaseExpiredHolds` phải trả suất qua đúng logic huỷ hiện có (`releasesCapacity`) để không trả hai lần.
+- Người bấm "Đã giao" nằm ở `order_events.actor = "staff:<id>"` — dùng cho bàn giao COD theo shipper.
 
 ## M10 — lưu ý từ M9
 
