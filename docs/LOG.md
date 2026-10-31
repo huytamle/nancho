@@ -32,7 +32,7 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M9 — Chấm công, bảng công, lương** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M9.5 — Gói "Ngày bán"** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | **M10 — Kho 2 mức, công nợ NCC, biên lợi nhuận, kiểm nhanh ABC** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| **M11 — Chỉ số, kho café, báo cáo tối, trợ thủ Telegram** | ✅ trên nhánh (31/10/2026) — chờ chủ quán bảo đưa lên `main` | xem `git log` |
+| **M11 — Chỉ số, kho café, báo cáo tối, trợ thủ Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Giai đoạn 3 — ca linh hoạt (đăng ký/đổi ca, xin nghỉ) | 📝 khi ≥ 4 nhân viên (§15) | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
