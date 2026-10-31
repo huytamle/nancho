@@ -31,7 +31,7 @@ test.afterAll(closeDb);
 
 test("pha chế: vào thẳng Vận hành, mở ca → đóng ca kèm ảnh Sapo; số đáng có chỉ hiện sau khi đếm", async ({ page }) => {
   await login(page, STAFF.barista, /\/admin\/van-hanh$/);
-  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Nhân viên"]);
+  await expect(tabs(page).getByRole("button")).toHaveText(["Ca & két", "Việc", "Sổ tay", "Nhân viên"]);
   await expect(page.getByRole("link", { name: "Bếp" })).toHaveCount(0);
 
   await page.getByRole("textbox", { name: "Số tờ 500.000" }).first().fill("2");
@@ -54,6 +54,9 @@ test("pha chế: vào thẳng Vận hành, mở ca → đóng ca kèm ảnh Sapo
   await page.getByLabel("Số tiền").fill("1tr");
   await expect(page.getByText("= 1.000.000đ")).toBeVisible();
   await page.getByRole("button", { name: "Đóng ca", exact: true }).click();
+  // Checklist Đóng ca (M8) chưa làm → hỏi lại một lần, không chặn cứng.
+  await expect(page.getByRole("alert").filter({ hasText: "Checklist chưa xong: Đóng ca (0/7)" })).toBeVisible();
+  await page.getByRole("button", { name: "Vẫn đóng ca" }).click();
   // Đáng có = 1.000.000 + 350.000 → thiếu 20.000.
   await expect(page.getByRole("status").filter({ hasText: "Đếm được 1.330.000đ · đáng có 1.350.000đ" })).toContainText("lệch −20.000đ");
   await expect(page.getByRole("heading", { name: "Mở ca — đếm két" })).toBeVisible();

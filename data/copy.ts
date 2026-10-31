@@ -324,6 +324,9 @@ export const copy = {
       photo_required: "Cần chụp báo cáo chốt ca Sapo.",
       locked: "Chứng từ đã khoá (quá 24 giờ / đã nạp bù / đã hoàn).",
       self_review: "Không tự duyệt khoản của chính mình — nhờ chủ quán.",
+      value_required: "Nhập số đo trước khi đánh dấu.",
+      photo_needed: "Mục này cần ảnh chụp.",
+      duplicate: "Đường dẫn này đã có trang khác dùng.",
       server_error: "Lỗi máy chủ — thử lại.",
     },
     prep: {

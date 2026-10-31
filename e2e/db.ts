@@ -27,6 +27,9 @@ export async function resetOrders() {
   await s`DELETE FROM ops_events`;
   await s`DELETE FROM telegram_updates`;
   await s`DELETE FROM settings WHERE key = 'ops'`;
+  await s`DELETE FROM checklist_runs`;
+  // Trang sổ tay do e2e tạo/sửa (seed có updated_by = NULL); chạy lại `db:seed` nếu lỡ sửa trang seed.
+  await s`DELETE FROM handbook_pages WHERE updated_by IS NOT NULL`;
   await s`DELETE FROM staff`;
   await s`UPDATE batches SET used_pan = 0, used_bbq = 0, status = 'open'`;
   await s`UPDATE service_days SET order_seq = 0, status = 'open'`;

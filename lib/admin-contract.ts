@@ -17,6 +17,10 @@ export type AdminError =
   | "photo_required"
   | "locked"
   | "self_review"
+  // Checklist & sổ tay (§17.5–17.6)
+  | "value_required"
+  | "photo_needed"
+  | "duplicate"
   | "server_error";
 
 export type AdminResult<T = object> = ({ ok: true } & T) | { ok: false; reason: AdminError };

@@ -1,6 +1,7 @@
 // Văn bản vận hành (§17): nhãn dùng chung UI + tin Telegram. Thuần — test được, không gửi gì.
 
 import { varianceLevel } from "@/lib/domain/cash";
+import { rangeLabel, type ValueSpec } from "@/lib/domain/checklist";
 import { expenseCode, type ExpenseCategory, type ExpenseSource } from "@/lib/domain/expense-command";
 import type { Role } from "@/lib/domain/roles";
 import { formatPrice } from "@/lib/format";
@@ -115,3 +116,9 @@ export const BOT_HELP = [
   "/chihuy C123 — huỷ (trong 24 giờ)",
   "/tonghop — tổng chi tháng này",
 ].join("\n");
+
+/** Số đo checklist ngoài ngưỡng (§17.5): "⚠️ Tủ mát bếp: 7 °C (chuẩn ≤ 5 °C) · Nhiệt độ tủ · Vy 14:05". */
+export function checklistAlertText(a: { title: string; label: string; value: number; spec: ValueSpec; by: string; time: string }): string {
+  const u = a.spec.unit ? ` ${a.spec.unit}` : "";
+  return `⚠️ ${a.label}: ${String(a.value).replace(".", ",")}${u} (chuẩn ${rangeLabel(a.spec)})\n${a.title} · ${a.by} ${a.time}`;
+}

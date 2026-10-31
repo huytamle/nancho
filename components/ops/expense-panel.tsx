@@ -5,7 +5,7 @@ import { cancelExpense, recordExpense, reimbursePocket, reviewPocket, setExpense
 import { useAdminAction } from "@/components/admin/use-admin";
 import { MoneyInput } from "@/components/ops/money-input";
 import { PhotoInput } from "@/components/ops/photo-input";
-import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/shift-panel";
+import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/styles";
 import { copy } from "@/data/copy";
 import { opsCopy } from "@/data/copy-ops";
 import { EXPENSE_CATEGORIES, EXPENSE_SOURCES, expenseCode, guessCategory, type ExpenseCategory, type ExpenseSource } from "@/lib/domain/expense-command";

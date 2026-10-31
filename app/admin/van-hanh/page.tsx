@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { HandbookPanel } from "@/components/ops/handbook-panel";
 import { OpsDashboard } from "@/components/ops/ops-dashboard";
 import { opsCopy, type OpsTab } from "@/data/copy-ops";
 import { requireStaff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
+import { loadWorkView } from "@/lib/server/dal/checklist";
+import { loadHandbookView } from "@/lib/server/dal/handbook";
 import { loadOpsView } from "@/lib/server/dal/ops";
 
 export const metadata: Metadata = { title: opsCopy.metaTitle };
@@ -19,10 +22,23 @@ export default function OpsPage({ searchParams }: PageProps<"/admin/van-hanh">) 
 
 async function Ops({ searchParams }: Pick<PageProps<"/admin/van-hanh">, "searchParams">) {
   const staff = await requireStaff();
-  const tab = (await searchParams).tab;
-  const view = await loadOpsView({ id: staff.id, name: staff.name, roles: staff.roles }, serverNow());
+  const { tab, trang } = await searchParams;
+  const actor = { id: staff.id, name: staff.name, roles: staff.roles };
+  const now = serverNow();
   const initial = typeof tab === "string" && tab in opsCopy.tabs ? (tab as OpsTab) : "ca";
-  return <OpsDashboard view={view} initialTab={initial} kitchen={staff.role !== null} />;
+  // Chỉ dựng (và ghi log xem) trang sổ tay khi đang mở tab Sổ tay với `trang=`.
+  const slug = initial === "so-tay" && typeof trang === "string" ? trang.slice(0, 60) : null;
+  const [view, work, book] = await Promise.all([loadOpsView(actor, now), loadWorkView(actor, now), loadHandbookView(actor, slug, now)]);
+  return (
+    <OpsDashboard
+      view={view}
+      work={work}
+      handbook={<HandbookPanel view={book} now={now.toISOString()} />}
+      bookPage={book.page?.slug ?? null}
+      initialTab={initial}
+      kitchen={staff.role !== null}
+    />
+  );
 }
 
 function Skeleton() {

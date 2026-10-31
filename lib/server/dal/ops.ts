@@ -15,16 +15,18 @@ import { loadSettings } from "@/lib/server/dal/settings";
 // Mọi thao tác ghi ops_events (actor = "staff:<id>").
 
 export type OpsActor = { id: number; name: string; roles: Role[] };
-type Ctx = { actor: OpsActor; now: Date; db?: Db };
-type Fail = { ok: false; reason: AdminError };
-const fail = (reason: AdminError): Fail => ({ ok: false, reason });
+export type OpsCtx = { actor: OpsActor; now: Date; db?: Db };
+type Ctx = OpsCtx;
+export type OpsFail = { ok: false; reason: AdminError };
+type Fail = OpsFail;
+export const fail = (reason: AdminError): Fail => ({ ok: false, reason });
 
 const tag = (a: OpsActor) => `staff:${a.id}`;
 const MANAGERS: Role[] = ["owner", "manager"];
 export const canSpend = (a: { roles: Role[] }) => hasRole(a.roles, MANAGERS);
 const CANCEL_WINDOW_MS = 24 * 3_600_000;
 
-async function logEvent(db: Executor, type: string, actor: OpsActor, data: object, now: Date) {
+export async function logEvent(db: Executor, type: string, actor: OpsActor, data: object, now: Date) {
   await db.insert(t.opsEvents).values({ type, actor: tag(actor), data, createdAt: now });
 }
 

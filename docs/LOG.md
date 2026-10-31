@@ -28,7 +28,8 @@ Hội đồng chuyên gia: UI/UX chuẩn Apple · vận hành F&B · lập trìn
 | **M6 — Thanh toán, SEO, PWA** | ✅ trên `main` (31/10/2026) | xem `git log` |
 | Ra mắt | ⏭ chờ chủ quán (xem "Câu hỏi đang treo") | — |
 | **M7 — Vận hành: ca & két, hộp chi, chi phí, Telegram** | ✅ trên `main` (31/10/2026) | xem `git log` |
-| M8–M11 (checklist/sổ tay, chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M8 là milestone kế tiếp** | — |
+| **M8 — Checklist & Sổ tay** | ✅ trên nhánh (31/10/2026), chưa lên `main` | xem `git log` |
+| M9–M11 (chấm công/lương, kho, chỉ số) | 📝 đặc tả ở Blueprint §17; **M9 là milestone kế tiếp** | — |
 
 CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 
@@ -183,6 +184,27 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - Tab mới thêm vào `opsTabsFor` (`components/ops/ops-dashboard.tsx`) và `opsCopy.tabs`. Quyền theo vai nằm ở DTO `loadOpsView` + DAL — giữ nguyên nguyên tắc này cho lương (manager không thấy tiền).
 - `ops_events` đã có — dùng cho log xem sổ tay, sửa giờ công.
 
+## M8 — đã làm
+
+- **Bảng** (migration `0003_checklist_handbook`): `checklist_templates` (roles[], moment `open·during·close·weekly`, items jsonb), `checklist_runs` (UNIQUE mẫu + ngày; `done` = `{ itemId: { by, at, value?, photo? } }`), `handbook_pages` (slug unique, kind `sop·recipe`, roles[], body Markdown ≤ 20k, `product_id`, `version`). Seed mẫu: Mở ca bếp/quầy, Nhiệt độ tủ, Đóng ca (Lau sàn cần ảnh), Vệ sinh tuần; 5 trang sổ tay (`data/seed-ops.ts`).
+- **Domain** `lib/domain/checklist.ts` + 8 test (coverage chung `lib/domain` 99,8%). Văn bản cảnh báo ở `lib/ops-text.ts` (`checklistAlertText`).
+- **Tab "Việc"** (`components/ops/checklist-panel.tsx`): tick có `useOptimistic`, mục số đo (chấp nhận "4,5", nút ± vì bàn phím số iOS thiếu dấu trừ), mục ảnh chụp xong tự đánh dấu, ngoài ngưỡng → chữ đỏ + toast + Telegram. Owner/manager sửa mẫu (`checklist-editor.tsx`, mỗi mẫu một `<details>`; tắt mẫu thay vì xoá).
+- **Tab "Sổ tay"** (`handbook-panel.tsx` là Server Component, `handbook-editor.tsx` client): danh sách theo Quy trình/Công thức, trang công thức hiện bảng định lượng từ `recipe_lines`, watermark tên + ngày (SVG — không bị axe tính tương phản, không chọn chữ được), log lượt xem. Đổi tab giữ `trang=` (prop `bookPage`).
+- **Đóng ca**: lượt `close` chưa xong → hiện cảnh báo, nút thành "Vẫn đóng ca" (không chặn).
+- **CSS**: `.md` cho HTML sổ tay; `select.input` giờ tự `appearance: none` + mũi tên không lặp (trước đó select nào thiếu `bg-no-repeat` sẽ lặp hình mũi tên). Hằng class màn Vận hành chuyển sang `components/ops/styles.ts` (Server Component không import được hằng từ file `"use client"`).
+- **Test:** unit 163 · int 74 (`handbook.int.test.ts` 14: quyền DTO, ngưỡng → Telegram, ảnh, bỏ tick, song song, lượt tuần, sửa mẫu, recipe_lines là nguồn duy nhất, slug trùng/version, Markdown chặn `<script>`/`javascript:`/ảnh ngoài) · e2e 93/93 (`e2e/m8.spec.ts` + `ops.spec` thêm bước "Vẫn đóng ca").
+- **JS `/`**: M8 thêm ≈ 0,1 KB (3 chuỗi lỗi trong `copy.ts`). Lưu ý: cách đo "cộng gzip mọi `<script src>` không `noModule` trong `index.html`" cho **214,3 KB cả trước lẫn sau M8** — khác con số ≈ 175 KB ghi ở M3–M7 (cách đo cũ chưa rõ). Cần chốt lại một cách đo duy nhất (đề xuất: Lighthouse/`next build` trên Vercel) trước khi so với ngân sách 180 KB.
+
+## M8 — việc của chủ quán để bật
+
+1. `npm run db:migrate && npm run db:seed` (seed chỉ thêm mẫu checklist/sổ tay còn thiếu, không đè dữ liệu).
+2. Vào Vận hành → Việc / Sổ tay sửa mẫu & nội dung cho đúng quán (nhiệt độ lò, bước làm bánh). Định lượng pizza sửa ở công thức bếp (`recipe_lines`), sổ tay tự theo.
+
+## M9 — lưu ý từ M8
+
+- Tỉ lệ hoàn thành checklist cho thưởng tuân thủ: tính từ `checklist_runs` + `progress(items hiện tại, done)` — đừng dùng `completed_at` (mẫu có thể đã thêm mục sau khi lượt xong).
+- Lỗi action thêm: `value_required`, `photo_needed`, `duplicate` (`lib/admin-contract.ts`, chuỗi ở `copy.admin.errors`).
+
 ## Bẫy môi trường đã gặp
 
 - Postgres cục bộ trong container: `/usr/lib/postgresql/16/bin`, chạy bằng user `postgres`, data ở `/var/tmp/pgdev` (scratchpad không cho user postgres truy cập), cổng 5433: `su postgres -c "/usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/pgdev/data -o '-p 5433 -k /var/tmp/pgdev' -l /var/tmp/pgdev/log start"`.
@@ -200,4 +222,6 @@ CI GitHub Actions: ✅ xanh trên `main` cho M0 (run #1, #2).
 - e2e ghi bảng `payments` (webhook) → `resetOrders` xoá cả `payments`; id giao dịch SePay trùng giữa các lần chạy sẽ thành `duplicate`.
 - Ngày/giờ trong `sql\`…\`` thô của drizzle phải truyền `date.toISOString()` + `::timestamptz` (truyền `Date` thẳng → lỗi `ERR_INVALID_ARG_TYPE`).
 - `drizzle-kit generate` hỏi đổi tên (cần TTY) khi vừa thêm vừa bỏ cột/enum → tách 2 migration (thêm trước, bỏ sau).
+- Int test **không** gọi `seed()` ở ngày khác 07/11 — `db.int` đếm `service_days` toàn bảng, thứ tự file của Vitest thay đổi theo thời gian chạy → dùng `seedStatic()` nếu chỉ cần dữ liệu tĩnh.
+- `git worktree` + symlink `node_modules` → Turbopack panic ("points out of the filesystem root"). So sánh bản cũ bằng `git stash -u` → build → `git stash pop`.
 - Script Playwright ngoài repo: `createRequire("/home/user/nancho/")("@playwright/test")` (gói `playwright` không resolve từ scratchpad).

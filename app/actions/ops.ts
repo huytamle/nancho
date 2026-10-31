@@ -6,6 +6,7 @@ import { after } from "next/server";
 import * as z from "zod";
 import type { AdminError, AdminResult } from "@/lib/admin-contract";
 import { normalizeCounts, type CashCounts } from "@/lib/domain/cash";
+import { CHECKLIST_MOMENTS, ITEM_ID, MAX_ITEMS, SLUG } from "@/lib/domain/checklist";
 import { EXPENSE_CATEGORIES, EXPENSE_SOURCES } from "@/lib/domain/expense-command";
 import { MAX_AMOUNT } from "@/lib/domain/money-text";
 import { ROLES } from "@/lib/domain/roles";
@@ -14,6 +15,8 @@ import { createLinkToken } from "@/lib/server/auth/link-token";
 import { currentStaff, type Staff } from "@/lib/server/auth/session";
 import { serverNow } from "@/lib/server/clock";
 import { getDb } from "@/lib/server/db/client";
+import { markChecklistItemCore, saveChecklistTemplateCore } from "@/lib/server/dal/checklist";
+import { saveHandbookPageCore } from "@/lib/server/dal/handbook";
 import * as t from "@/lib/server/db/schema";
 import {
   cancelExpenseCore,
@@ -206,4 +209,56 @@ export async function uploadOpsPhoto(form: FormData): Promise<AdminResult<{ id: 
     console.error(JSON.stringify({ evt: "upload_failed", error: String(err) }));
     return { ok: false, reason: "server_error" };
   }
+}
+
+// ── Checklist & sổ tay (M8, §17.5–17.6) ──
+
+const measure = z.number().min(-100).max(1000);
+const Mark = z.object({
+  templateId: id,
+  itemId: z.string().regex(ITEM_ID),
+  value: measure.nullable().optional(),
+  photo: fileId.nullable().optional(),
+  undo: z.boolean().optional(),
+});
+export async function markChecklistItem(raw: z.input<typeof Mark>): Promise<AdminResult<{ complete: boolean; out: boolean }>> {
+  return run(Mark, raw, async (i, actor, now) => {
+    const res = await markChecklistItemCore(i, { actor, now });
+    if (!res.ok) return res;
+    notify(res.telegram);
+    return { ok: true, complete: res.complete, out: res.out };
+  });
+}
+
+const roles = z.array(z.enum(ROLES)).min(1).max(ROLES.length);
+const Item = z.object({
+  id: z.string().regex(ITEM_ID),
+  label: z.string().trim().min(1).max(120),
+  photo: z.boolean().optional(),
+  value: z.object({ unit: z.string().trim().max(10), min: measure.optional(), max: measure.optional() }).optional(),
+});
+const Template = z.object({
+  id: id.optional(),
+  title: z.string().trim().min(1).max(80),
+  roles,
+  moment: z.enum(CHECKLIST_MOMENTS),
+  items: z.array(Item).min(1).max(MAX_ITEMS),
+  sort: z.number().int().min(0).max(999),
+  isActive: z.boolean(),
+});
+export async function saveChecklistTemplate(raw: z.input<typeof Template>) {
+  return run(Template, raw, (i, actor, now) => saveChecklistTemplateCore(i, { actor, now }));
+}
+
+const Page = z.object({
+  id: id.optional(),
+  slug: z.string().max(60).regex(SLUG),
+  title: z.string().trim().min(1).max(80),
+  kind: z.enum(["sop", "recipe"]),
+  roles,
+  body: z.string().max(20_000),
+  productId: z.string().max(60).nullable(),
+});
+export async function saveHandbookPage(raw: z.input<typeof Page>) {
+  return run(Page, raw, (i, actor, now) => saveHandbookPageCore(i, { actor, now }));
 }

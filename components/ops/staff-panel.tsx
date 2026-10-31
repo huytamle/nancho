@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { setStaffRoles, telegramLink } from "@/app/actions/ops";
 import { useAdminAction } from "@/components/admin/use-admin";
-import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/shift-panel";
+import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/styles";
 import { copy } from "@/data/copy";
 import { opsCopy } from "@/data/copy-ops";
 import { showToast } from "@/lib/client/toast-store";

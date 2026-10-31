@@ -6,19 +6,17 @@ import { useAdminAction } from "@/components/admin/use-admin";
 import { CashCounter } from "@/components/ops/cash-counter";
 import { MoneyInput, PlainMoneyInput } from "@/components/ops/money-input";
 import { PhotoInput } from "@/components/ops/photo-input";
+import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/styles";
 import { copy } from "@/data/copy";
 import { opsCopy } from "@/data/copy-ops";
 import type { CashCounts } from "@/lib/domain/cash";
 import { vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
 import { varianceText } from "@/lib/ops-text";
+import type { WorkView } from "@/lib/server/dal/checklist";
 import type { OpsView, ShiftView } from "@/lib/server/dal/ops";
 
 const t = opsCopy;
-export const box = "rounded-tile bg-surface p-5";
-export const h2 = "text-sm font-semibold tracking-[0.12em] text-secondary uppercase";
-export const primaryBtn = "min-h-14 w-full rounded-full bg-invert font-semibold text-on-invert disabled:opacity-50";
-export const secondaryBtn = "min-h-12 rounded-full bg-elevated px-5 text-[15px] font-semibold disabled:opacity-50";
 
 type Count = { total: number; expected: number | null; variance: number | null };
 
@@ -34,14 +32,20 @@ function CountResult({ r, tolerance }: { r: Count; tolerance: number }) {
   );
 }
 
-export function ShiftPanel({ view }: { view: OpsView }) {
+export function ShiftPanel({ view, work }: { view: OpsView; work: WorkView }) {
   // Kết quả đếm giữ ở đây: mở/đóng ca xong thì form tương ứng biến mất (refresh), kết quả vẫn phải còn.
   const [result, setResult] = useState<Count | null>(null);
   return (
     <div className="space-y-5">
       {result ? <CountResult r={result} tolerance={view.settings.cashTolerance} /> : null}
       {view.openShift ? (
-        <CloseShift key={view.openShift.id} view={view} shift={view.openShift} onResult={setResult} />
+        <CloseShift
+          key={view.openShift.id}
+          view={view}
+          shift={view.openShift}
+          pendingClose={work.runs.filter((r) => r.moment === "close" && !r.complete).map((r) => `${r.title} (${r.done}/${r.total})`)}
+          onResult={setResult}
+        />
       ) : (
         <OpenShift onResult={setResult} />
       )}
@@ -74,7 +78,7 @@ function OpenShift({ onResult }: { onResult: (r: Count) => void }) {
   );
 }
 
-function CloseShift({ view, shift, onResult }: { view: OpsView; shift: ShiftView; onResult: (r: Count) => void }) {
+function CloseShift({ view, shift, pendingClose, onResult }: { view: OpsView; shift: ShiftView; pendingClose: string[]; onResult: (r: Count) => void }) {
   const { pending, run } = useAdminAction();
   const [cafeCash, setCafeCash] = useState(0);
   const [cafeTransfer, setCafeTransfer] = useState(0);
@@ -84,7 +88,10 @@ function CloseShift({ view, shift, onResult }: { view: OpsView; shift: ShiftView
   const [dropText, setDropText] = useState("");
   const [drop, setDrop] = useState<number | null>(null);
   const [note, setNote] = useState("");
+  // Checklist Đóng ca chưa xong → hỏi lại một lần, không chặn cứng (§17.5).
+  const [asked, setAsked] = useState(false);
   const needsPhoto = cafeCash + cafeTransfer + cafeOther > 0 && !photo;
+  const confirmFirst = pendingClose.length > 0 && !asked;
 
   return (
     <>
@@ -130,19 +137,26 @@ function CloseShift({ view, shift, onResult }: { view: OpsView; shift: ShiftView
             {copy.admin.errors.photo_required}
           </p>
         ) : null}
+        {asked && pendingClose.length > 0 ? (
+          <p className="mt-3 rounded-2xl bg-elevated p-4 text-[15px] text-warn" role="alert">
+            {t.work.closePending(pendingClose.join(", "))}
+          </p>
+        ) : null}
         <button
           type="button"
           disabled={pending || needsPhoto || (dropText.trim() !== "" && drop === null)}
           onClick={() =>
-            run(
-              () => closeShift({ shiftId: shift.id, counts, cafeCash, cafeTransfer, cafeOther, sapoPhoto: photo, drop: drop ?? 0, note }),
-              t.shift.closed,
-              onResult,
-            )
+            confirmFirst
+              ? setAsked(true)
+              : run(
+                  () => closeShift({ shiftId: shift.id, counts, cafeCash, cafeTransfer, cafeOther, sapoPhoto: photo, drop: drop ?? 0, note }),
+                  t.shift.closed,
+                  onResult,
+                )
           }
           className={`${primaryBtn} mt-4`}
         >
-          {t.shift.close}
+          {asked && pendingClose.length > 0 ? t.work.closeAnyway : t.shift.close}
         </button>
       </section>
     </>

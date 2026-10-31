@@ -25,7 +25,7 @@ describe("migration", () => {
     const tables = await db.execute<{ relname: string; relrowsecurity: boolean }>(
       sql`SELECT relname, relrowsecurity FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r'`,
     );
-    expect(tables.length).toBe(24);
+    expect(tables.length).toBe(27);
     expect(tables.filter((r) => !r.relrowsecurity)).toEqual([]);
     const policies = await db.execute(sql`SELECT 1 FROM pg_policies WHERE schemaname = 'public'`);
     expect(policies.length).toBe(0);

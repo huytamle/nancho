@@ -28,6 +28,7 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import type { CashCounts } from "@/lib/domain/cash";
+import type { ChecklistDone, ChecklistItem } from "@/lib/domain/checklist";
 import type { ExpenseCategory } from "@/lib/domain/expense-command";
 import type { Role } from "@/lib/domain/roles";
 import type { ComboGroup, ISODate } from "@/lib/domain/types";
@@ -61,6 +62,8 @@ export const cashBox = pgEnum("cash_box", ["register", "petty"]);
 export const cashEntryKind = pgEnum("cash_entry_kind", ["open", "close", "check", "drop", "replenish"]);
 export const expenseSource = pgEnum("expense_source", ["petty", "pocket", "bank"]);
 export const expenseStatus = pgEnum("expense_status", ["recorded", "pending", "approved", "rejected", "reimbursed"]);
+export const checklistMoment = pgEnum("checklist_moment", ["open", "during", "close", "weekly"]);
+export const handbookKind = pgEnum("handbook_kind", ["sop", "recipe"]);
 
 // ── Thực đơn ──
 
@@ -492,6 +495,59 @@ export const opsFiles = pgTable("ops_files", {
   createdBy: integer().references(() => staff.id),
   createdAt: createdAt(),
 }, (t) => [check("ops_files_size_check", sql`${t.size} BETWEEN 1 AND 1048576`)]).enableRLS();
+
+// ── Checklist & sổ tay (§17.5–17.6, M8) ──
+
+/** Mẫu checklist theo vai trò & thời điểm. Không xoá — tắt bằng `is_active`. */
+export const checklistTemplates = pgTable(
+  "checklist_templates",
+  {
+    id: serial().primaryKey(),
+    title: text().notNull(),
+    roles: role().array().$type<Role[]>().notNull(),
+    moment: checklistMoment().notNull(),
+    items: jsonb().$type<ChecklistItem[]>().notNull(),
+    sort: smallint().notNull().default(0),
+    isActive: boolean().notNull().default(true),
+  },
+  (t) => [check("checklist_templates_title_check", sql`char_length(${t.title}) BETWEEN 1 AND 80`)],
+).enableRLS();
+
+/** Lượt checklist của một ngày (`weekly` = Thứ Hai đầu tuần). Nhiều người cùng tick một lượt. */
+export const checklistRuns = pgTable(
+  "checklist_runs",
+  {
+    id: serial().primaryKey(),
+    templateId: integer()
+      .notNull()
+      .references(() => checklistTemplates.id),
+    serviceDate: isoDate().notNull(),
+    done: jsonb().$type<ChecklistDone>().notNull().default({}),
+    completedAt: tstz(),
+  },
+  (t) => [unique("checklist_runs_template_date").on(t.templateId, t.serviceDate)],
+).enableRLS();
+
+/** Sổ tay: quy trình (`sop`) & công thức (`recipe`, gắn `product_id` → bảng định lượng đọc `recipe_lines`). */
+export const handbookPages = pgTable(
+  "handbook_pages",
+  {
+    id: serial().primaryKey(),
+    slug: text().notNull().unique(),
+    title: text().notNull(),
+    kind: handbookKind().notNull(),
+    roles: role().array().$type<Role[]>().notNull(),
+    body: text().notNull(),
+    productId: text().references(() => products.id),
+    version: integer().notNull().default(1),
+    updatedBy: integer().references(() => staff.id, { onDelete: "set null" }),
+    updatedAt: createdAt(),
+  },
+  (t) => [
+    check("handbook_pages_title_check", sql`char_length(${t.title}) BETWEEN 1 AND 80`),
+    check("handbook_pages_body_check", sql`char_length(${t.body}) <= 20000`),
+  ],
+).enableRLS();
 
 export type Order = typeof orders.$inferSelect;
 export type BatchRow = typeof batches.$inferSelect;

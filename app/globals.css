@@ -283,6 +283,11 @@ html:has(dialog.sheet[open]) {
 
 select.input {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23a1a1a6' stroke-width='1.6'/%3E%3C/svg%3E");
+  appearance: none;
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 12px;
+  padding-right: 2.5rem;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -315,4 +320,66 @@ select.input {
 .print-80 main {
   max-width: 72mm;
   font-size: 12px;
+}
+
+/* ── Sổ tay (§17.6): HTML do marked sinh ở server ── */
+.md {
+  font-size: 16px;
+  line-height: 1.6;
+}
+.md > * + * {
+  margin-top: 0.75rem;
+}
+.md h1,
+.md h2 {
+  margin-top: 1.5rem;
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+.md h3,
+.md h4 {
+  margin-top: 1.25rem;
+  font-weight: 600;
+}
+.md ol,
+.md ul {
+  padding-left: 1.4rem;
+}
+.md ol {
+  list-style: decimal;
+}
+.md ul {
+  list-style: disc;
+}
+.md li + li {
+  margin-top: 0.35rem;
+}
+.md a {
+  text-decoration: underline;
+}
+.md blockquote {
+  border-left: 3px solid var(--line);
+  padding-left: 1rem;
+  color: var(--secondary);
+}
+.md code {
+  border-radius: 6px;
+  background: var(--elevated);
+  padding: 0.1rem 0.35rem;
+  font-size: 0.9em;
+}
+.md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.md th,
+.md td {
+  border-bottom: 1px solid var(--line);
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  text-align: left;
+}
+.md hr {
+  border-color: var(--line);
 }
