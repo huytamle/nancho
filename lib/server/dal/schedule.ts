@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, between, eq } from "drizzle-orm";
 import { computeOvenStatus, upcomingSlots, type OvenSnapshot, type OvenStatus } from "@/lib/domain/oven-status";
-import { addDays, vnDateOf, vnInstant, vnWeekday, type ISODate } from "@/lib/domain/time";
+import { addDays, vnDateOf, vnDayLabel, vnInstant, vnWeekday, type ISODate } from "@/lib/domain/time";
 import type { Segment, ServiceDay } from "@/lib/domain/types";
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import { batches, serviceDays, slotTemplates } from "@/lib/server/db/schema";
@@ -100,7 +100,7 @@ export async function getOvenSnapshot(now: Date, db: Executor = getDb()): Promis
     status: computeOvenStatus({ now, days, settings: ordering }),
     days: upcomingSlots({ now, days, settings: ordering }),
     // Cà phê: hôm nay + ngày mai là đủ (đồ uống không đặt trước nhiều ngày).
-    cafe: upcomingSlots({ now, days: cafeDays, settings: ordering }),
+    cafe: upcomingSlots({ now, days: cafeDays, settings: ordering }).map((d) => ({ ...d, label: vnDayLabel(d.date, today, true) })),
     rules: {
       maxQtyPerLine: ordering.maxQtyPerLine,
       freeShipFrom: shipping.freeShipFrom,

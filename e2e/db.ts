@@ -17,7 +17,10 @@ const db = () => {
 export async function resetOrders() {
   const s = db();
   await s`DELETE FROM payments`;
+  await s`DELETE FROM vouchers`;
+  await s`DELETE FROM point_moves`;
   await s`DELETE FROM orders`;
+  await s`DELETE FROM members`;
   await s`DELETE FROM customers`;
   await s`DELETE FROM rate_limits`;
   await s`DELETE FROM stock_moves`;
@@ -39,6 +42,7 @@ export async function resetOrders() {
   await s`DELETE FROM timesheets`;
   await s`DELETE FROM pay_rates`;
   await s`DELETE FROM time_entries`;
+  await s`DELETE FROM shift_requests`;
   await s`DELETE FROM shift_plans`;
   await s`DELETE FROM holidays`;
   await s`DELETE FROM settings WHERE key = 'payroll'`;

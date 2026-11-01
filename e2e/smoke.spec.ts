@@ -7,14 +7,21 @@ async function expectNoSeriousA11yIssues(page: import("@playwright/test").Page) 
   expect(serious.map((v) => `${v.id}: ${v.help}`)).toEqual([]);
 }
 
-test("trang chủ là app đặt món nền tối", async ({ page }) => {
+test("trang chủ: landing + app đặt món, theo theme máy (tối)", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
   await page.goto("/");
   await expect(page).toHaveTitle(/THE HEAT PIZZA/);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Pan pizza");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Nướng bằng lửa");
   await expect(page.getByRole("button", { name: /Thêm Pan Pizza Pepperoni/ })).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("lang", "vi");
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
   expect(bg).toBe("rgb(0, 0, 0)");
+  await expectNoSeriousA11yIssues(page);
+  // Nút đổi theme: sang sáng, nhớ qua lần tải lại.
+  await page.getByRole("button", { name: "Chuyển sang giao diện sáng" }).click();
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  expect(await page.evaluate(() => getComputedStyle(document.body).backgroundColor)).toBe("rgb(245, 245, 247)");
   await expectNoSeriousA11yIssues(page);
 });
 

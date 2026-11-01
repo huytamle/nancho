@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { vnDateOf, type ISODate } from "@/lib/domain/time";
 import { track } from "@/lib/client/analytics";
+import type { Segment } from "@/lib/domain/types";
 
 export type CartAddon = { productId: string; qty: number };
 export type CartItem = {
@@ -26,6 +27,8 @@ export type Draft = {
   paymentMethod: "cod" | "transfer";
   note: string;
   remember: boolean;
+  /** Mã ưu đãi/giới thiệu khách nhập (M12) — server kiểm tra lại khi đặt. */
+  promo: string;
 };
 
 export type CartState = {
@@ -33,6 +36,8 @@ export type CartState = {
   items: CartItem[];
   batchId: number | null;
   serviceDate: ISODate | null;
+  /** Tab thực đơn đang xem (M12): pizza theo mẻ T6–CN, cà phê theo khung giao trong ngày. */
+  segment: Segment;
   draft: Draft;
 };
 
@@ -41,6 +46,9 @@ export type CartAction =
   | { type: "setQty"; key: string; qty: number }
   | { type: "restore"; state: CartState }
   | { type: "selectSlot"; batchId: number; date: ISODate }
+  | { type: "segment"; segment: Segment }
+  /** Đổi giỏ sang segment khác (cà phê ↔ pizza không chung đơn): bỏ món cũ, giữ nháp. */
+  | { type: "replace"; segment: Segment; item: Omit<CartItem, "key"> }
   | { type: "draft"; patch: Partial<Draft> }
   | { type: "placed" };
 
@@ -51,6 +59,7 @@ export const EMPTY_CART: CartState = {
   items: [],
   batchId: null,
   serviceDate: null,
+  segment: "pizza",
   draft: {
     phone: "",
     name: "",
@@ -63,6 +72,7 @@ export const EMPTY_CART: CartState = {
     paymentMethod: "cod",
     note: "",
     remember: false,
+    promo: "",
   },
 };
 
@@ -101,10 +111,14 @@ export function cartReducer(state: CartState, action: CartAction): CartState {
       return action.state;
     case "selectSlot":
       return { ...state, batchId: action.batchId, serviceDate: action.date };
+    case "segment":
+      return action.segment === state.segment ? state : { ...state, segment: action.segment, batchId: null, serviceDate: null };
+    case "replace":
+      return { ...state, segment: action.segment, batchId: null, serviceDate: null, items: [{ ...action.item, key: itemKey(action.item) }] };
     case "draft":
       return { ...state, draft: { ...state.draft, ...action.patch } };
     case "placed":
-      return { ...state, items: [], draft: { ...state.draft, note: "" } };
+      return { ...state, items: [], draft: { ...state.draft, note: "", promo: "" } };
   }
 }
 

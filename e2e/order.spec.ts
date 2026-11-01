@@ -41,7 +41,7 @@ test("đặt combo + add-on, giao tận nhà", async ({ page }) => {
   const sheet = page.getByRole("dialog", { name: /Combo Đôi/ });
   await expect(sheet).toBeVisible();
   await sheet.getByLabel("Phô mai Bơ tỏi").check();
-  await sheet.getByLabel("Hũ Sốt Bơ Tỏi chấm viền bánh").check();
+  await sheet.getByRole("button", { name: "Tăng số lượng Hũ Sốt Bơ Tỏi chấm viền bánh" }).click();
   await sheet.getByRole("button", { name: "Tăng số lượng Combo Đôi — 1 Pan Pizza + 1 BBQ" }).click();
   await expect(sheet.getByRole("button", { name: /Thêm vào đơn · 588\.000đ/ })).toBeVisible();
   await noSeriousA11y(page);
@@ -120,7 +120,7 @@ test("hoàn tác thêm nhanh", async ({ page }) => {
 
 test("reduced-motion: sheet mở/đóng không phụ thuộc animation", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.getByRole("button", { name: "Xem BBQ #2" }).click();
+  await page.getByRole("button", { name: "Xem Đùi gà BBQ Sous-vide" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   const duration = await dialog.evaluate((d) => getComputedStyle(d.querySelector(".sheet-panel")!).transitionDuration);

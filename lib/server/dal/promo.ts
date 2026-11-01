@@ -283,7 +283,7 @@ export async function loadAccount(member: Member, now: Date, db: Executor = getD
       return {
         code: o.code,
         trackingPath: `/o/${o.trackingToken}`,
-        dayLabel: vnDayLabel(o.serviceDate as ISODate, today),
+        dayLabel: vnDayLabel(o.serviceDate as ISODate, today, b.segment === "cafe"),
         timeLabel: b.segment === "cafe" ? `${vnTimeLabel(b.ovenAt)}–${vnTimeLabel(b.readyAt)}` : vnTimeLabel(b.readyAt),
         segment: b.segment,
         status: o.status,

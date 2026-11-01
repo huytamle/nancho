@@ -64,6 +64,13 @@
       "when": 1793458425892,
       "tag": "0008_m12_members_cafe",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793504732550,
+      "tag": "0009_shift_requests",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,8 @@ export type AnalyticsEvent =
   | "lookup_known"
   | "place_order"
   | "slot_full"
-  | "cancel_order";
+  | "cancel_order"
+  | "promo_applied";
 
 type Props = Record<string, string | number | boolean | null>;
 

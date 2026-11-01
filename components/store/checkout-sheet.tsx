@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { lookupCustomer } from "@/app/actions/customer";
 import { placeOrder } from "@/app/actions/order";
+import { checkPromo, myVouchers, type WalletVoucher } from "@/app/actions/promo";
 import { OrderSuccess } from "@/components/store/order-success";
 import { SlotPicker } from "@/components/store/slot-chips";
 import { useCatalog } from "@/components/store/store-provider";
@@ -16,7 +17,8 @@ import { refreshOven } from "@/lib/client/oven-store";
 import { fits, suggestSlot } from "@/lib/domain/capacity";
 import type { SlotView } from "@/lib/domain/oven-status";
 import { formatPhoneInput, normalizePhone } from "@/lib/domain/phone";
-import { priceOrder } from "@/lib/domain/pricing";
+import { CAFE_MIN_SUBTOTAL, priceOrder } from "@/lib/domain/pricing";
+import type { PromoError } from "@/lib/domain/promo";
 import { vnTimeLabel } from "@/lib/domain/time";
 import { formatPrice } from "@/lib/format";
 import { checkFields, type FieldErrors, type FieldKey, type LookupResult, type PlaceOrderResult } from "@/lib/order-contract";
@@ -41,7 +43,8 @@ export function CheckoutSheet({ open, onClose }: { open: boolean; onClose: () =>
 
 function CheckoutBody({ onClose }: { onClose: () => void }) {
   const { byId, zones, pickup } = useCatalog();
-  const { cart, lines, req, slot, day, days, snap } = useOrder();
+  const { cart, lines, req, slot, day, days, snap, segment } = useOrder();
+  const cafe = segment === "cafe";
   const d = cart.draft;
   const [pending, startTransition] = useTransition();
   const [touched, setTouched] = useState<Set<FieldKey>>(new Set());
@@ -54,6 +57,10 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
   const [lookup, setLookup] = useState<LookupResult | null>(null);
   const [savedChoice, setSavedChoice] = useState<"saved" | "other" | null>(null);
   const [prepay, setPrepay] = useState(false);
+  const [promo, setPromo] = useState<{ code: string; amount: number } | null>(null);
+  const [promoErr, setPromoErr] = useState<string | null>(null);
+  const [promoBusy, setPromoBusy] = useState(false);
+  const [wallet, setWallet] = useState<{ signedIn: boolean; vouchers: WalletVoucher[] } | null>(null);
   const idem = useRef<string | null>(null);
   const startedAt = useRef(0);
   const lookupTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -107,6 +114,8 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     startedAt.current = Date.now();
+    // Ví mã của khách đăng nhập (M12) — chip một chạm. Lỗi/khách vãng lai → không hiện.
+    myVouchers().then(setWallet, () => {});
   }, []);
 
   useEffect(() => {
@@ -121,7 +130,8 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
   const set = (patch: Partial<Draft>) => dispatch({ type: "draft", patch });
   const zone = zones.find((z) => z.id === d.zoneId) ?? null;
   const gift = pickup?.giftProductId ? byId.get(pickup.giftProductId) : undefined;
-  const isPickup = d.fulfillment === "pickup" && pickup !== null;
+  // Cà phê chỉ giao tận nơi (M12).
+  const isPickup = !cafe && d.fulfillment === "pickup" && pickup !== null;
 
   const priced = priceOrder({
     lines: lines.map((l) => ({
@@ -134,10 +144,13 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
       ? { type: "pickup", point: pickup, giftProduct: gift }
       : { type: "delivery", zone: { shipFee: zone?.shipFee ?? 0 } },
     shipping: { freeShipFrom: snap?.rules.freeShipFrom ?? null },
+    discount: promo?.amount,
   });
   const subtotal = priced.ok ? priced.subtotal : lines.reduce((s, l) => s + l.lineTotal, 0);
   const shipFee = priced.ok && (isPickup || zone) ? priced.shipFee : null;
-  const total = subtotal + (shipFee ?? 0);
+  const discount = priced.ok ? priced.discount : 0;
+  const total = subtotal - discount + (shipFee ?? 0);
+  const belowCafeMin = cafe && subtotal < CAFE_MIN_SUBTOTAL;
   const giftItem = priced.ok ? priced.items.find((i) => i.isGift) : undefined;
   const unavailableIds = new Set([
     ...lines.filter((l) => !l.product.isAvailable).map((l) => l.product.id),
@@ -153,6 +166,10 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
     const p = byId.get(id);
     return p?.isAvailable ? [p] : [];
   });
+  // Nước lạnh có thẻ riêng (thấy rõ giá kèm); sốt chấm giữ hàng chip gợi ý.
+  const drinkSuggestions = suggestions.filter((p) => p.kind === "drink");
+  const sauceSuggestions = suggestions.filter((p) => p.kind !== "drink");
+  const hasDrink = lines.some((l) => l.product.kind === "drink" || l.addons.some((a) => a.product.kind === "drink"));
 
   const known = lookup?.status === "known" ? lookup : null;
   const savedToken = !isPickup && savedChoice === "saved" ? (known?.savedAddressToken ?? null) : null;
@@ -162,7 +179,34 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
     (submitted || touched.has(f) ? clientErrors[f] : undefined) ?? serverErrors[f];
   const blur = (f: FieldKey) => setTouched((s) => (s.has(f) ? s : new Set(s).add(f)));
 
-  const canSubmit = lines.length > 0 && slot !== null && fitsSlot && unavailableIds.size === 0 && !pending;
+  const canSubmit = lines.length > 0 && slot !== null && fitsSlot && unavailableIds.size === 0 && !belowCafeMin && !pending;
+
+  async function applyPromo(raw: string) {
+    const code = raw.trim();
+    if (!code) return;
+    setPromoBusy(true);
+    setPromoErr(null);
+    try {
+      const r = await checkPromo({ code, phone: d.phone, subtotal });
+      if (r.ok) {
+        setPromo({ code: r.code, amount: r.amount });
+        set({ promo: r.code });
+        track("promo_applied", { amount: r.amount });
+      } else {
+        setPromo(null);
+        setPromoErr(promoMessage(r.reason, r.minSubtotal));
+      }
+    } catch {
+      setPromoErr(t.promoErrors.not_found);
+    } finally {
+      setPromoBusy(false);
+    }
+  }
+  function clearPromo() {
+    setPromo(null);
+    setPromoErr(null);
+    set({ promo: "" });
+  }
 
   function submit(target: SlotView | null = slot) {
     setSubmitted(true);
@@ -207,6 +251,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
                 },
           paymentMethod: d.paymentMethod,
           note: d.note.trim() || undefined,
+          promoCode: promo?.code,
           website: (document.getElementById("co-website") as HTMLInputElement | null)?.value ?? "",
           startedAt: startedAt.current,
         });
@@ -225,6 +270,10 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
       setServerErrors(res.reason === "invalid" ? res.fieldErrors : {});
       // Token địa chỉ cũ hết hạn (30 phút) → mở lại ô mô tả nhà.
       if (res.reason === "invalid" && res.fieldErrors.address && savedToken) setSavedChoice("other");
+      if (res.reason === "promo") {
+        setPromo(null);
+        setPromoErr(promoMessage(res.promo, res.minSubtotal));
+      }
       if (res.reason === "prepay_required") {
         setPrepay(true);
         set({ paymentMethod: "transfer" });
@@ -301,10 +350,32 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         ) : null}
       </ul>
 
-      {suggestions.length > 0 ? (
+      {!cafe && !hasDrink && drinkSuggestions.length > 0 ? (
+        <div className="-mt-2 rounded-3xl bg-elevated/70 p-4">
+          <p className="text-[15px] font-semibold">{t.drinksTitle}</p>
+          <p className="mt-0.5 text-sm text-secondary">{t.drinksBody}</p>
+          <div className="no-scrollbar -mx-1 mt-3 flex gap-2 overflow-x-auto px-1">
+            {drinkSuggestions.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => dispatch({ type: "add", item: { productId: p.id, qty: 1, addons: [] } })}
+                className="min-h-11 shrink-0 rounded-full bg-surface px-3 text-sm shadow-sm"
+              >
+                + {p.name} <span className="font-semibold tabular-nums">{Math.round(p.price / 1000)}k</span>
+                {p.listPrice && p.listPrice > p.price ? (
+                  <s className="ml-1 text-secondary tabular-nums">{Math.round(p.listPrice / 1000)}k</s>
+                ) : null}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {sauceSuggestions.length > 0 ? (
         <div className="-mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
           <span className="shrink-0 text-xs text-secondary">{t.suggest}:</span>
-          {suggestions.map((p) => (
+          {sauceSuggestions.map((p) => (
             <button
               key={p.id}
               type="button"
@@ -317,8 +388,14 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         </div>
       ) : null}
 
+      {belowCafeMin ? (
+        <p role="status" className="rounded-field border border-warn/50 px-3 py-2.5 text-sm">
+          {t.cafeMin(formatPrice(CAFE_MIN_SUBTOTAL), formatPrice(CAFE_MIN_SUBTOTAL - subtotal))}
+        </p>
+      ) : null}
+
       {/* Mẻ */}
-      <Section title={t.receiveAt}>
+      <Section title={cafe ? t.cafeWindow : t.receiveAt}>
         {days.length > 0 ? (
           <SlotPicker days={days} selected={slot} onSelect={(s) => chooseSlot(s, { toast: false })} />
         ) : (
@@ -410,7 +487,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
                 }`
               : null}
           </Choice>
-          {pickup ? (
+          {pickup && !cafe ? (
             <Choice checked={isPickup} onSelect={() => set({ fulfillment: "pickup" })} title={`☕ ${t.pickup(pickup.name.replace(/^Cà phê /, ""))}`}>
               {t.freeShip}
               {gift?.isAvailable ? (
@@ -503,6 +580,86 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
         {prepay ? <p className="mt-1 text-sm text-secondary">{t.prepayNote}</p> : null}
       </Section>
 
+      {/* Mã ưu đãi (M12) */}
+      <Section title={t.promo}>
+        {promo ? (
+          <div className="flex min-h-12 items-center justify-between gap-2 rounded-field border border-live/50 px-3 py-1.5 text-sm">
+            <span>
+              🎟 <span className="font-semibold tracking-wider">{promo.code}</span> · {t.promoApplied(formatPrice(promo.amount))}
+            </span>
+            <button type="button" onClick={clearPromo} className="min-h-11 shrink-0 px-2 text-secondary underline">
+              {t.promoRemove}
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <label htmlFor="co-promo" className="sr-only">
+              {t.promo}
+            </label>
+            <input
+              id="co-promo"
+              value={d.promo}
+              maxLength={24}
+              autoCapitalize="characters"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(e) => {
+                set({ promo: e.target.value.toUpperCase() });
+                setPromoErr(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void applyPromo(d.promo);
+                }
+              }}
+              placeholder={t.promoPlaceholder}
+              className="input flex-1 tracking-wider uppercase placeholder:normal-case placeholder:tracking-normal"
+              aria-invalid={!!promoErr}
+              aria-describedby={promoErr ? "co-promo-err" : undefined}
+            />
+            <button
+              type="button"
+              onClick={() => void applyPromo(d.promo)}
+              disabled={promoBusy || !d.promo.trim()}
+              className="min-h-12 shrink-0 rounded-full bg-elevated px-5 text-sm font-semibold disabled:opacity-40"
+            >
+              {promoBusy ? "…" : t.promoApply}
+            </button>
+          </div>
+        )}
+        {promoErr ? (
+          <p id="co-promo-err" role="alert" className="mt-1.5 text-sm text-danger">
+            {promoErr}
+          </p>
+        ) : null}
+        {!promo && wallet?.vouchers.length ? (
+          <div className="no-scrollbar -mx-1 mt-2 flex gap-2 overflow-x-auto px-1">
+            {wallet.vouchers.map((v) => (
+              <button
+                key={v.code}
+                type="button"
+                onClick={() => {
+                  set({ promo: v.code });
+                  void applyPromo(v.code);
+                }}
+                className="min-h-11 shrink-0 rounded-full border border-dashed border-accent px-3 text-sm"
+              >
+                🎟 −{Math.round(v.amount / 1000)}k <span className="text-secondary">· {t.promoMin(Math.round(v.minSubtotal / 1000))}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {wallet && !wallet.signedIn ? (
+          <p className="mt-2 text-xs text-secondary">
+            {t.memberNudge}{" "}
+            <a href="/tai-khoan" className="font-medium text-text underline underline-offset-4">
+              {t.memberLink}
+            </a>
+          </p>
+        ) : null}
+      </Section>
+
       <div className="space-y-2">
         {showNote ? (
           <Field id={fieldId("note")} label={t.note} error={errorOf("note")}>
@@ -543,12 +700,17 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
       {/* Chốt */}
       <div className="sticky bottom-0 -mx-5 mt-6 space-y-2 border-t border-line bg-surface/95 px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
         <FailureBanner failure={failure} onPick={retryAt} onRetry={() => submit()} onZalo={zaloFallback} />
-        <p className="flex justify-between text-sm text-secondary tabular-nums">
+        <p className="flex flex-wrap justify-between gap-x-3 text-sm text-secondary tabular-nums">
           <span>
             {t.subtotal} {formatPrice(subtotal)}
           </span>
+          {discount > 0 ? (
+            <span className="text-live">
+              {t.discount} −{formatPrice(discount)}
+            </span>
+          ) : null}
           <span>
-            {t.ship} {shipFee === null ? "—" : formatPrice(shipFee)}
+            {t.ship} {shipFee === null ? t.shipPending : formatPrice(shipFee)}
           </span>
         </p>
         <button
@@ -563,7 +725,7 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
               {t.pending}
             </>
           ) : (
-            t.submit(slot?.readyLabel ?? "", formatPrice(total))
+            (cafe ? t.submitCafe : t.submit)(slot?.readyLabel ?? "", formatPrice(total))
           )}
         </button>
         <p className="text-center text-xs text-secondary" aria-live="polite">
@@ -575,6 +737,11 @@ function CheckoutBody({ onClose }: { onClose: () => void }) {
 }
 
 const timeOf = (iso: string) => vnTimeLabel(new Date(iso));
+
+function promoMessage(reason: PromoError | "rate_limited", min?: number): string {
+  if (reason === "min_subtotal") return t.promoErrors.min_subtotal(formatPrice(min ?? 0));
+  return t.promoErrors[reason];
+}
 
 function CartLineRow({ line, max, unavailable }: { line: OrderLine; max: number; unavailable: boolean }) {
   const { byId } = useCatalog();
@@ -637,7 +804,7 @@ function FailureBanner({
               <span className="sr-only">{t.pickAlternative}</span>
               {failure.alternatives.slice(0, 3).map((s) => (
                 <button key={s.batchId} type="button" onClick={() => onPick(s)} className="min-h-11 rounded-full border border-accent px-3 font-semibold tabular-nums">
-                  {s.readyLabel} · {copy.slot.left(s.remainingPan)}
+                  {s.readyLabel} · {s.segment === "cafe" ? copy.slot.open : copy.slot.left(s.remainingPan)}
                 </button>
               ))}
             </div>
@@ -660,6 +827,12 @@ function FailureBanner({
       return (
         <p role="alert" className={`${box} border-warn/50`}>
           {t.paused}
+        </p>
+      );
+    case "promo":
+      return (
+        <p role="alert" className={`${box} border-warn/50`}>
+          {t.promoFailed}
         </p>
       );
     case "prepay_required":

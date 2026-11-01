@@ -42,7 +42,8 @@ const DOT: Record<OvenStatus["kind"], string> = {
 export function OvenBarLive({ initial }: { initial: OvenSnapshot | null }) {
   const { snap: live, error } = useOven();
   const snap = live ?? initial;
-  const { slot, days } = useOrder();
+  const { slot, days, segment } = useOrder();
+  const cafe = segment === "cafe";
   const sentinel = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLElement>(null);
   const [collapsed, setCollapsed] = useState(false);
@@ -98,15 +99,20 @@ export function OvenBarLive({ initial }: { initial: OvenSnapshot | null }) {
 
   return (
     <>
-      <div ref={sentinel} aria-hidden className="pointer-events-none absolute top-[120px] h-px w-px" />
+      {/* Mốc thu gọn: 120px sau vị trí gốc của thanh (thanh nằm trong khu thực đơn, không ở đầu trang). */}
+      <div aria-hidden className="relative h-0">
+        <div ref={sentinel} className="pointer-events-none absolute top-[120px] h-px w-px" />
+      </div>
       <section
         ref={bar}
-        aria-label={t.regionLabel}
+        aria-label={cafe ? t.cafeRegion : t.regionLabel}
         data-collapsed={collapsed || undefined}
         className="oven-bar sticky top-0 z-30 border-b border-line bg-header backdrop-blur-xl"
       >
         <div className="mx-auto max-w-5xl px-4 pt-[max(0.75rem,env(safe-area-inset-top))] pb-3">
-          {status ? (
+          {cafe && snap ? (
+            <CafeBar slot={slot} dayLabel={dayLabel(slot?.date ?? null)} days={shownDays} />
+          ) : status ? (
             <>
               <p className="sr-only" aria-live="polite">
                 {headline(status, dayLabel)}
@@ -160,6 +166,34 @@ export function OvenBarLive({ initial }: { initial: OvenSnapshot | null }) {
           )}
         </div>
       </section>
+    </>
+  );
+}
+
+/** Thanh khung giao cà phê (M12): không đếm khay — chỉ khung giờ + giờ chốt. */
+function CafeBar({ slot, dayLabel, days }: { slot: ReturnType<typeof useOrder>["slot"]; dayLabel: string; days: ReturnType<typeof useOrder>["days"] }) {
+  const headline = slot ? t.cafeOpen(dayLabel.toLowerCase(), slot.readyLabel) : t.cafeNone;
+  return (
+    <>
+      <p className="sr-only" aria-live="polite">
+        {headline}
+      </p>
+      <div className="flex items-center gap-2.5">
+        <span aria-hidden className={`size-2 shrink-0 rounded-full ${slot ? "bg-live live-dot" : "bg-tertiary"}`} />
+        <p aria-hidden className="min-w-0 flex-1 text-[15px] leading-snug font-semibold">
+          {headline}
+        </p>
+      </div>
+      <div className="oven-more">
+        <div className="min-h-0">
+          {slot ? <p className="mt-1 pl-[1.125rem] text-sm text-secondary tabular-nums">⏳ {t.cafeCutoff(vnTimeLabel(new Date(slot.cutoffAt)))}</p> : null}
+          {days.length > 0 ? (
+            <div className="mt-2.5">
+              <SlotPicker days={days} selected={slot} onSelect={(s) => chooseSlot(s)} />
+            </div>
+          ) : null}
+        </div>
+      </div>
     </>
   );
 }

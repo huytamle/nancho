@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Be_Vietnam_Pro } from "next/font/google";
 import { Analytics } from "@/components/analytics";
+import { themeScript } from "@/components/theme-toggle";
 import { copy } from "@/data/copy";
 import { site } from "@/data/site";
 import "./globals.css";
@@ -52,8 +53,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f5f7" },
+  ],
+  colorScheme: "dark light",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
@@ -61,7 +65,11 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="vi" className={`${beVietnam.variable} h-full antialiased`}>
+    <html lang="vi" className={`${beVietnam.variable} h-full antialiased`} data-theme="dark" suppressHydrationWarning>
+      <head>
+        {/* Chọn sáng/tối trước lần vẽ đầu (không nháy). CSP đã cho phép inline script. */}
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="min-h-full bg-bg font-sans text-text">
         <a
           href="#noi-dung"

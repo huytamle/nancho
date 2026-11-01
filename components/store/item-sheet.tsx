@@ -4,13 +4,12 @@ import Image from "next/image";
 import { useState } from "react";
 import { SlotPicker } from "@/components/store/slot-chips";
 import { useCatalog, type StoreProduct } from "@/components/store/store-provider";
-import { chooseSlot, productAvailability, useOrder } from "@/components/store/use-order";
+import { addToCart, chooseSlot, productAvailability, useOrder } from "@/components/store/use-order";
 import { Sheet } from "@/components/ui/sheet";
 import { Stepper } from "@/components/ui/stepper";
 import { copy } from "@/data/copy";
-import { dispatch, getCart } from "@/lib/client/cart-store";
-import { showToast } from "@/lib/client/toast-store";
 import { suggestSlot } from "@/lib/domain/capacity";
+import { isExtra, segmentOf } from "@/lib/domain/types";
 import { formatPrice } from "@/lib/format";
 
 const t = copy.item;
@@ -25,12 +24,20 @@ export function ItemSheet({ product, open, onClose }: { product: StoreProduct | 
 
 function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => void }) {
   const { byId } = useCatalog();
-  const { slot, days, req, day, snap } = useOrder();
+  const order = useOrder();
+  // Món khác segment với giỏ → xem mẻ/khung của segment món này (thêm vào sẽ thay giỏ).
+  const own = isExtra(product.kind) || segmentOf(product.kind) === order.segment;
+  const snap = order.snap;
+  const days = own ? order.days : ((segmentOf(product.kind) === "cafe" ? snap?.cafe : snap?.days) ?? []);
+  const slot = own ? order.slot : (days.flatMap((d) => d.slots).find((s) => s.level !== "closed" && s.level !== "full") ?? null);
+  const req = own ? order.req : { pan: 0, bbq: 0 };
+  const day = slot ? (days.find((d) => d.date === slot.date) ?? null) : null;
+  const cafe = product.kind === "cafe";
   const groups = product.comboConfig ?? [];
   const [choices, setChoices] = useState<Record<string, string>>(() =>
     Object.fromEntries(groups.map((g) => [g.key, g.options.find((o) => byId.get(o)?.isAvailable) ?? g.options[0]])),
   );
-  const [extras, setExtras] = useState<string[]>([]);
+  const [extras, setExtras] = useState<Record<string, number>>({});
   const [qty, setQty] = useState(1);
   const [picking, setPicking] = useState(false);
 
@@ -43,7 +50,12 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
   const maxByRoom = avail.ok ? avail.maxQty : 0;
   const maxQty = Math.max(1, Math.min(snap?.rules.maxQtyPerLine ?? 10, maxByRoom));
   const count = Math.min(qty, maxQty);
-  const total = product.price * count + upsells.filter((u) => extras.includes(u.id)).reduce((s, u) => s + u.price, 0);
+  const total = product.price * count + upsells.reduce((s, u) => s + u.price * (extras[u.id] ?? 0), 0);
+  const sauces = upsells.filter((u) => u.kind === "addon");
+  const drinks = upsells.filter((u) => u.kind === "drink");
+  const drinkCount = drinks.reduce((n, u) => n + (extras[u.id] ?? 0), 0);
+  // Gợi ý số lon theo số người ăn: combo ~2 người, mỗi bánh/phần BBQ ~1 lon.
+  const people = (product.kind === "combo" ? 2 : 1) * count;
   const canAdd = avail.ok && !choiceUnavailable;
 
   const suggestion =
@@ -53,29 +65,27 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
 
   function add() {
     if (!canAdd) return;
-    const before = getCart();
-    dispatch({
-      type: "add",
-      item: {
+    addToCart(
+      product,
+      {
         productId: product.id,
         qty: count,
         comboChoices: groups.length > 0 ? choices : undefined,
-        // Mỗi add-on 1 phần cho cả dòng (hũ sốt/chai), không nhân theo số bánh.
-        addons: extras.map((id) => ({ productId: id, qty: 1 })),
+        // Số hũ sốt/lon nước cho cả dòng, không nhân theo số bánh.
+        addons: Object.entries(extras)
+          .filter(([, q]) => q > 0)
+          .map(([id, q]) => ({ productId: id, qty: q })),
       },
-    });
-    navigator.vibrate?.(8);
-    showToast(`${copy.product.added} ${product.short}`, {
-      label: copy.product.undo,
-      run: () => dispatch({ type: "restore", state: before }),
-    });
+      byId,
+    );
     onDone();
   }
+  const setExtra = (id: string, q: number) => setExtras((x) => ({ ...x, [id]: q }));
 
   return (
     <div className="space-y-5">
       <div className="relative -mx-1 aspect-[16/10] overflow-hidden rounded-3xl bg-elevated">
-        <Image src={product.image} alt={product.name} fill sizes="(min-width: 1024px) 440px, 100vw" className="object-cover" />
+        <Image src={product.image} alt={product.name} fill sizes="(min-width: 1024px) 440px, 100vw" className="object-cover" unoptimized={product.image.endsWith(".svg")} />
       </div>
 
       <div>
@@ -84,7 +94,7 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
           <p className="shrink-0 text-lg font-semibold tabular-nums">{formatPrice(product.price)}</p>
         </div>
         <p className="mt-1.5 text-[15px] leading-relaxed text-secondary">{product.description ?? product.short}</p>
-        {product.kind !== "addon" ? (
+        {product.kind === "combo" || product.kind === "pizza" || product.kind === "bbq" ? (
           <p className="mt-2 text-sm text-text">
             <span aria-hidden className="text-live">✓ </span>
             {copy.product.gingerNote}
@@ -124,24 +134,15 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
         </fieldset>
       ))}
 
-      {upsells.length > 0 ? (
-        <fieldset>
-          <legend className="mb-2 text-[11px] font-medium tracking-[0.22em] text-secondary uppercase">{t.extras}</legend>
-          <div className="divide-y divide-line rounded-field bg-elevated/60">
-            {upsells.map((u) => (
-              <label key={u.id} className="flex min-h-12 cursor-pointer items-center gap-3 px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={extras.includes(u.id)}
-                  onChange={(e) => setExtras((x) => (e.target.checked ? [...x, u.id] : x.filter((i) => i !== u.id)))}
-                  className="size-5 accent-[var(--accent)]"
-                />
-                <span className="flex-1">{u.name}</span>
-                <span className="text-secondary tabular-nums">+{formatPrice(u.price)}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
+      {sauces.length > 0 ? <ExtraList title={t.extras} items={sauces} extras={extras} onChange={setExtra} /> : null}
+      {drinks.length > 0 ? (
+        <ExtraList
+          title={t.drinks}
+          hint={drinkCount < people ? t.drinksHint(people) : t.drinksOk}
+          items={drinks}
+          extras={extras}
+          onChange={setExtra}
+        />
       ) : null}
 
       <div className="rounded-field bg-elevated/60 px-3 py-2">
@@ -150,7 +151,9 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
             <span className={avail.ok || avail.reason === "sold_out" ? "" : "text-danger"}>
               🕕{" "}
               {avail.ok || avail.reason === "sold_out"
-                ? t.pickupAt(slot.readyLabel, day.label.toLowerCase())
+                ? cafe
+                  ? t.cafeAt(slot.readyLabel, day.label.toLowerCase())
+                  : t.pickupAt(slot.readyLabel, day.label.toLowerCase())
                 : t.noRoom(slot.readyLabel, avail.reason === "no_bbq" ? t.noBbq : t.noPan)}
             </span>
           ) : (
@@ -199,5 +202,49 @@ function ItemBody({ product, onDone }: { product: StoreProduct; onDone: () => vo
         </button>
       </div>
     </div>
+  );
+}
+
+/** Sốt/nước kèm: bước +/- (mua 2–3 lon cho cả nhà chỉ cần chạm), hiện giá lẻ gạch ngang. */
+function ExtraList({
+  title,
+  hint,
+  items,
+  extras,
+  onChange,
+}: {
+  title: string;
+  hint?: string;
+  items: StoreProduct[];
+  extras: Record<string, number>;
+  onChange: (id: string, qty: number) => void;
+}) {
+  return (
+    <fieldset>
+      <legend className="mb-1 text-[11px] font-medium tracking-[0.22em] text-secondary uppercase">{title}</legend>
+      {hint ? <p className="mb-2 text-sm text-secondary">{hint}</p> : <div className="mb-2" />}
+      <div className="divide-y divide-line rounded-field bg-elevated/60">
+        {items.map((u) => (
+          <div key={u.id} className="flex min-h-14 items-center gap-3 px-3 py-1.5 text-sm">
+            <span className="relative size-10 shrink-0 overflow-hidden rounded-xl bg-surface">
+              <Image src={u.image} alt="" fill sizes="40px" className="object-cover" unoptimized={u.image.endsWith(".svg")} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block leading-snug">{u.name}</span>
+              <span className="tabular-nums">
+                +{formatPrice(u.price)}
+                {u.listPrice && u.listPrice > u.price ? (
+                  <s className="ml-1.5 text-secondary">
+                    <span className="sr-only">{copy.product.listPrice} </span>
+                    {formatPrice(u.listPrice)}
+                  </s>
+                ) : null}
+              </span>
+            </span>
+            <Stepper size="sm" min={0} max={10} value={extras[u.id] ?? 0} label={u.name} onChange={(q) => onChange(u.id, q)} />
+          </div>
+        ))}
+      </div>
+    </fieldset>
   );
 }

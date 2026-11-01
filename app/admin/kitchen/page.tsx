@@ -32,7 +32,7 @@ async function Kitchen({ searchParams }: Pick<PageProps<"/admin/kitchen">, "sear
     <KitchenDashboard
       day={day}
       lock={lock}
-      staff={{ name: staff.name, role: staff.role, orderRoles: staff.orderRoles }}
+      staff={{ name: staff.name, role: staff.role, orderRoles: staff.orderRoles, roles: staff.roles }}
       initialTab={tab && tab in copy.admin.tabs ? (tab as KitchenTab) : "chuan-bi"}
     />
   );

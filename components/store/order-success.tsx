@@ -5,6 +5,7 @@ import { copy } from "@/data/copy";
 import { site } from "@/data/site";
 import { HoldCountdown } from "@/components/store/hold-countdown";
 import { TransferBox } from "@/components/store/transfer-box";
+import { formatPrice } from "@/lib/format";
 import type { PlaceOrderResult } from "@/lib/order-contract";
 
 const t = copy.success;
@@ -19,11 +20,19 @@ export function OrderSuccess({ result, onDone }: { result: Extract<PlaceOrderRes
         <circle cx="26" cy="26" r="24" fill="none" stroke="currentColor" strokeWidth="3" opacity=".25" />
         <path className="draw-check" d="M15 27l7.5 7.5L37 19" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
-      <h3 className="mt-4 text-xl font-semibold tracking-tight text-balance">{t.title(result.seq, result.readyLabel)}</h3>
+      <h3 className="mt-4 text-xl font-semibold tracking-tight text-balance">{(result.segment === "cafe" ? t.titleCafe : t.title)(result.seq, result.readyLabel)}</h3>
       <p className="mt-1.5 text-[15px] text-secondary">
         {result.dayLabel} · {result.etaLabel}
       </p>
       <p className="mt-1 text-sm text-secondary tabular-nums">{result.code}</p>
+      {result.discount > 0 || result.points ? (
+        <p className="mt-3 flex flex-wrap justify-center gap-2 text-sm">
+          {result.discount > 0 ? (
+            <span className="rounded-full bg-live/15 px-3 py-1 font-medium text-live">{t.saved(formatPrice(result.discount))}</span>
+          ) : null}
+          {result.points ? <span className="rounded-full bg-accent/15 px-3 py-1 font-medium text-accent">{t.points(result.points)}</span> : null}
+        </p>
+      ) : null}
 
       {result.holdUntil ? <HoldCountdown until={result.holdUntil} refreshOnExpire={false} className="mt-5 w-full" /> : null}
       {pay.method === "transfer" ? <TransferBox info={pay} className="mt-5 w-full" /> : null}

@@ -79,7 +79,7 @@ function successOf(
     seq: o.seq,
     trackingPath: `/o/${o.trackingToken}`,
     readyLabel,
-    dayLabel: vnDayLabel(o.serviceDate, vnDateOf(ctx.now)),
+    dayLabel: vnDayLabel(o.serviceDate, vnDateOf(ctx.now), cafe),
     etaLabel: cafe
       ? `trong khung ${readyLabel}`
       : o.fulfillment === "delivery"
@@ -89,6 +89,7 @@ function successOf(
     total: o.total,
     discount: o.discount,
     points: o.memberId ? pointsFor(o.total) : null,
+    segment: b.segment,
     status: o.status === "confirmed" ? "confirmed" : "placed",
     holdUntil: o.holdUntil?.toISOString() ?? null,
     payment:
@@ -544,7 +545,7 @@ export async function getOrderView(token: string, now: Date, db: Executor = getD
     stage: customerStage(o.status, o.fulfillment),
     fulfillment: o.fulfillment,
     serviceDate: o.serviceDate,
-    dayLabel: vnDayLabel(o.serviceDate, vnDateOf(now)),
+    dayLabel: vnDayLabel(o.serviceDate, vnDateOf(now), cafe),
     readyLabel,
     ovenLabel: vnTimeLabel(b.ovenAt),
     etaLabel: cafe ? `${vnTimeLabel(b.ovenAt)}–${readyLabel}` : o.fulfillment === "delivery" ? `${readyLabel}–${etaEnd}` : readyLabel,

@@ -14,7 +14,7 @@ function chipText(s: SlotView) {
     case "bbq_only":
       return copy.slot.bbqOnly;
     default:
-      return copy.slot.left(s.remainingPan);
+      return s.segment === "cafe" ? copy.slot.open : copy.slot.left(s.remainingPan);
   }
 }
 
@@ -76,7 +76,7 @@ export function SlotPicker({
               aria-disabled={!ok}
               aria-label={`${s.readyLabel}, ${chipText(s)}`}
               onClick={() => ok && !checked && onSelect(s)}
-              className={`chip min-h-11 shrink-0 snap-start rounded-full border px-4 text-sm tabular-nums transition ${
+              className={`chip min-h-11 shrink-0 snap-start rounded-full border px-4 text-sm tabular-nums transition-transform ${
                 checked
                   ? "border-text bg-text font-semibold text-bg"
                   : hot

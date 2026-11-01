@@ -652,6 +652,30 @@ export const shiftPlans = pgTable(
   (t) => [unique("shift_plans_staff_date").on(t.staffId, t.date), check("shift_plans_time_check", sql`${t.end} > ${t.start}`)],
 ).enableRLS();
 
+/**
+ * Đăng ký / nhường / xin nghỉ ca (Giai đoạn 3). `claim` = tự đăng ký ca; `give` = nhường ca cho đồng nghiệp (`target_id`) hoặc
+ * cho ai nhận cũng được; `leave` = xin nghỉ. `open` = chờ đồng nghiệp nhận, `pending` = chờ quản lý duyệt. Duyệt xong mới ghi `shift_plans`.
+ */
+export const shiftRequests = pgTable(
+  "shift_requests",
+  {
+    id: serial().primaryKey(),
+    kind: text().$type<"claim" | "give" | "leave">().notNull(),
+    staffId: integer()
+      .notNull()
+      .references(() => staff.id),
+    date: isoDate().notNull(),
+    start: time(),
+    end: time(),
+    targetId: integer().references(() => staff.id),
+    status: text().$type<"open" | "pending" | "approved" | "rejected" | "cancelled">().notNull(),
+    note: text().notNull().default(""),
+    decidedBy: integer().references(() => staff.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.date), check("shift_requests_note_check", sql`char_length(${t.note}) <= 200`)],
+).enableRLS();
+
 /** Ngày lễ (owner nhập) — hệ số mặc định 3,0. */
 export const holidays = pgTable(
   "holidays",

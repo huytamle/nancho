@@ -118,7 +118,7 @@ test("khách chấm điểm khẩu vị trên trang đơn", async ({ page }) => 
   await form.getByLabel("Góp ý thêm (tuỳ chọn)").fill("Sườn hơi mặn");
   await noSeriousA11y(page);
   await form.getByRole("button", { name: "Gửi đánh giá" }).click();
-  await expect(form.getByText("Cảm ơn bạn! Bếp đã nhận.")).toBeVisible();
+  await expect(form.getByText(/Cảm ơn bạn!/)).toBeVisible();
   await expect(form.getByRole("button", { name: "Cập nhật đánh giá" })).toBeVisible();
   expect(await feedbackRows()).toEqual([{ ratings: { "pepperoni-pan": 3, "ribs-sv": 1 }, tags: { "ribs-sv": ["ngọt hơn"] }, comment: "Sườn hơi mặn" }]);
   await noHorizontalScroll(page);

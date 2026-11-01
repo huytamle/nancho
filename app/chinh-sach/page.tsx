@@ -96,6 +96,10 @@ export default function PolicyPage() {
               </li>
               <li>Thông báo đơn mới được gửi vào nhóm Telegram nội bộ của bếp (tên, số điện thoại, khu vực, món).</li>
               <li>
+                <strong>Tài khoản thành viên</strong> (tuỳ chọn): đăng nhập bằng Google, Facebook hoặc email do dịch vụ Clerk xử lý — tên, email và ảnh đại diện lưu tại máy chủ của Clerk ở <strong>Hoa Kỳ</strong>.
+                Quán chỉ lưu mã tài khoản, tên, email, điểm tích luỹ, mã ưu đãi và lịch sử đơn để tính điểm và ưu đãi. Quán không nhận mật khẩu của bạn. Muốn xoá tài khoản, nhắn Zalo cho quán.
+              </li>
+              <li>
                 <strong>Góp ý khẩu vị</strong> (tuỳ chọn, sau khi nhận món): điểm 😋/🙂/😕 và góp ý bạn gõ được lưu cùng đơn để bếp chỉnh công thức, gửi vào nhóm bếp không kèm số điện thoại.
                 Lời góp ý được xoá cùng thời hạn {ORDER_ADDRESS_RETENTION_DAYS} ngày như địa chỉ; điểm chỉ dùng cho thống kê.
               </li>

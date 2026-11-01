@@ -74,8 +74,9 @@ export function addDays(date: ISODate, n: number): ISODate {
 }
 
 /** "Tối nay" | "Mai" | "T7 07/11". */
-export function vnDayLabel(date: ISODate, today: ISODate): string {
-  if (date === today) return "Tối nay";
+/** `daytime`: cà phê giao ban ngày (M12) → "Hôm nay" thay vì "Tối nay". */
+export function vnDayLabel(date: ISODate, today: ISODate, daytime = false): string {
+  if (date === today) return daytime ? "Hôm nay" : "Tối nay";
   if (date === addDays(today, 1)) return "Mai";
   const [, month, day] = date.split("-");
   return `${WEEKDAY_SHORT[vnWeekday(date)]} ${day}/${month}`;

@@ -44,3 +44,17 @@ describe("revive", () => {
     expect(revive(JSON.stringify(saved), "2026-11-05").items).toHaveLength(1);
   });
 });
+
+describe("segment (M12)", () => {
+  it("đổi tab bỏ mẻ đã chọn; thay giỏ khi đổi cà phê ↔ pizza, giữ nháp", () => {
+    let s = cartReducer({ ...EMPTY_CART, draft: { ...EMPTY_CART.draft, phone: "0912 345 678" } }, { type: "add", item: combo });
+    s = cartReducer(s, { type: "selectSlot", batchId: 3, date: "2026-11-06" });
+    expect(cartReducer(s, { type: "segment", segment: "pizza" })).toBe(s);
+    const cafe = cartReducer(s, { type: "replace", segment: "cafe", item: { productId: "cafe-latte", qty: 2, addons: [] } });
+    expect(cafe.segment).toBe("cafe");
+    expect(cafe.batchId).toBeNull();
+    expect(cafe.items.map((i) => i.productId)).toEqual(["cafe-latte"]);
+    expect(cafe.draft.phone).toBe("0912 345 678");
+    expect(cartReducer(cafe, { type: "segment", segment: "pizza" }).serviceDate).toBeNull();
+  });
+});

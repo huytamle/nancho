@@ -1,5 +1,6 @@
 "use client";
 
+import { RoleBadges } from "@/components/ui/role-badges";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type ReactNode } from "react";
@@ -138,7 +139,9 @@ export function OpsDashboard({
               </button>
             </form>
           </div>
-          <p className="mx-auto max-w-3xl px-4 pb-1.5 text-xs text-secondary">{view.viewer.name}</p>
+          <p className="mx-auto max-w-3xl px-4 pb-1.5 text-xs text-secondary">
+            {view.viewer.name} <RoleBadges roles={view.viewer.roles} />
+          </p>
         </header>
 
         <main id="noi-dung" className="mx-auto max-w-3xl px-4 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-10">

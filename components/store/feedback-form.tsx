@@ -52,7 +52,7 @@ export function FeedbackForm({ token, feedback: f }: { token: string; feedback: 
         res = { ok: false as const, reason: "server_error" as const };
       }
       if (res.ok) {
-        setMsg({ ok: true, text: t.thanks });
+        setMsg({ ok: true, text: res.voucher ? t.thanksVoucher(res.voucher) : t.thanks });
         router.refresh();
       } else setMsg({ ok: false, text: res.reason === "rate_limited" ? t.rateLimited : res.reason === "locked" ? t.locked : t.failed });
     });

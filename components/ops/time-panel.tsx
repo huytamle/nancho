@@ -16,6 +16,7 @@ import {
   submitTimesheet,
 } from "@/app/actions/time";
 import { useAdminAction, useNow } from "@/components/admin/use-admin";
+import { ShiftBoard, ShiftReview } from "@/components/ops/shift-requests";
 import { box, h2, primaryBtn, secondaryBtn } from "@/components/ops/styles";
 import { opsCopy } from "@/data/copy-ops";
 import type { PayLine } from "@/lib/domain/payroll";
@@ -49,6 +50,8 @@ export function TimePanel({ time }: { time: TimeView }) {
         <MySlip key={p.id} slip={p} />
       ))}
       {me.onPayroll ? <MyWeek plans={me.week} /> : null}
+      {me.onPayroll ? <ShiftBoard shifts={time.shifts} today={time.today} /> : null}
+      <ShiftReview shifts={time.shifts} />
       {me.onPayroll ? <MyMonth time={time} /> : null}
       {me.timesheets
         .filter((s) => s.status === "acknowledged")

@@ -30,7 +30,7 @@ export function OrderReceipt({ token, view: v }: { token: string; view: OrderVie
         <p className="text-sm text-secondary tabular-nums">{v.code}</p>
         <h1 className="mt-1 text-[28px] leading-tight font-semibold tracking-tight">{t.title(v.seq)}</h1>
         <p className="mt-1.5 text-[15px] text-secondary">
-          {t.batch(v.readyLabel, v.dayLabel)} · {t.oven(v.ovenLabel)}
+          {v.segment === "cafe" ? t.cafeWindow(v.etaLabel, v.dayLabel) : `${t.batch(v.readyLabel, v.dayLabel)} · ${t.oven(v.ovenLabel)}`}
         </p>
       </header>
 

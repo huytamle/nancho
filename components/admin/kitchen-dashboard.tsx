@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { logout } from "@/app/actions/auth";
+import { RoleBadges } from "@/components/ui/role-badges";
+import type { Role } from "@/lib/domain/roles";
 import { BatchBoard } from "@/components/admin/batch-board";
 import { DeliveryBoard } from "@/components/admin/delivery-board";
 import { OrderDetailSheet } from "@/components/admin/order-detail-sheet";
@@ -62,7 +64,7 @@ export function KitchenDashboard({
 }: {
   day: KitchenDay;
   lock: OvenLockView | null;
-  staff: { name: string; role: StaffRole; orderRoles: StaffRole[] };
+  staff: { name: string; role: StaffRole; orderRoles: StaffRole[]; roles: Role[] };
   initialTab: KitchenTab;
 }) {
   const router = useRouter();
@@ -200,7 +202,7 @@ export function KitchenDashboard({
               </form>
             </div>
             <p className="mx-auto max-w-3xl px-4 pb-1.5 text-xs text-secondary" aria-live="off">
-              {staff.name} · {t.updated(ageSec)}
+              {staff.name} <RoleBadges roles={staff.roles} /> · {t.updated(ageSec)}
             </p>
             {online ? null : (
               <p role="status" className="bg-warn px-4 py-2 text-center text-sm font-semibold text-black">

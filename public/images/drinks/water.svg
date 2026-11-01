@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 500" role="img" aria-label="NƯỚC SUỐI">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="75%"><stop offset="0" stop-color="#2a2a2e"/><stop offset="1" stop-color="#0d0d0f"/></radialGradient>
+    <linearGradient id="shine" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".0"/><stop offset=".22" stop-color="#fff" stop-opacity=".28"/><stop offset=".4" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".25"/></linearGradient>
+  </defs>
+  <rect width="400" height="500" fill="url(#bg)"/>
+  <ellipse cx="200" cy="452" rx="110" ry="14" fill="#000" opacity=".5"/>
+  <rect x="150" y="70" width="100" height="40" rx="10" fill="#2a8fd6"/>
+  <path d="M130 120 Q130 105 150 105 H250 Q270 105 270 120 L285 170 V420 Q285 445 260 445 H140 Q115 445 115 420 V170 Z" fill="#dff3ff" stroke="#2a8fd6" stroke-width="4"/>
+  <rect x="115" y="230" width="170" height="110" fill="#2a8fd6"/>
+  <text x="200" y="292" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" fill="#ffffff" letter-spacing="2">NƯỚC SUỐI</text>
+</svg>

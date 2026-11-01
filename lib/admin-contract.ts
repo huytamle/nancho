@@ -30,6 +30,7 @@ export type AdminError =
   | "period_open"
   | "missing_rate"
   | "below_min"
+  | "conflict"
   // Ngày bán (§18)
   | "refund_required"
   // Kho & công nợ (§17.8)

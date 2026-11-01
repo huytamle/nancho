@@ -48,6 +48,7 @@ import { forgotOutText, paydayText, periodName, timesheetDisputeText, timesheetD
 import { getDb, type Db, type Executor } from "@/lib/server/db/client";
 import * as t from "@/lib/server/db/schema";
 import { fail, logEvent, type OpsActor, type OpsCtx, type OpsFail } from "@/lib/server/dal/ops";
+import { loadShifts, type ShiftsView } from "@/lib/server/dal/shifts";
 import { loadSettings } from "@/lib/server/dal/settings";
 import { verifyStaffPin } from "@/lib/server/dal/staff";
 
@@ -746,6 +747,7 @@ export type TimeView = {
     timesheets: MyTimesheet[];
     payslips: MyPayslip[];
   };
+  shifts: ShiftsView;
   manage: null | {
     period: Period;
     week: ISODate;
@@ -890,6 +892,7 @@ export async function loadTimeView(viewer: OpsActor, now: Date, opts: { ip: stri
         received: p.staffAckAt !== null,
       })),
     },
+    shifts: await loadShifts(viewer, now, db),
     manage,
   };
 }

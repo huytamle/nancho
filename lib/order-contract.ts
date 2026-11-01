@@ -45,6 +45,7 @@ export type PlaceOrderResult =
       discount: number;
       /** Điểm sẽ cộng khi đơn hoàn tất (khách đăng nhập); null = khách vãng lai. */
       points: number | null;
+      segment: "pizza" | "cafe";
       status: "placed" | "confirmed";
       /** Đơn bắt buộc trả trước: giữ suất tới lúc này (ISO, §18.2); null = không có hạn. */
       holdUntil: string | null;

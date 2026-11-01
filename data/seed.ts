@@ -76,8 +76,8 @@ export const seedProducts: Product[] = [
   product({
     id: "bbq-2",
     kind: "bbq",
-    name: "BBQ #2",
-    short: "Chủ quán đặt tên",
+    name: "Đùi gà BBQ Sous-vide",
+    short: "Mềm mọng, da giòn sốt BBQ",
     price: 149_000,
     image: "/images/menu/bbq-thigh.jpg",
     usesPan: 0,
